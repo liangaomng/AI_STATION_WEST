@@ -2,7 +2,7 @@ import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 from fft import *
-
+import visual as visual_plt
 # 定义符号变量和时间
 t = sp.Symbol('t')
 z1 = sp.Function('z1')(t)
@@ -16,6 +16,8 @@ z2 = sp.Function('z2')(t)
 #所以数据集相当于 11的6次方
 #时间0-2s 100个点
 
+#head_csv
+header_4csv = 'z1_ini,z2_ini,a11,a12,a21,a22,t,z1,z2,sol_z1,sol_z2'
 
 
 def demo():
@@ -93,7 +95,7 @@ def demo():
         axes[0].quiver(z1_values[:-1], z2_values[:-1],
                    difference_z1,
                    difference_z2,
-                   scale_units='xy', angles='xy', scale=2, color='r')
+                   scale_units='xy', angles='xy', scale=5, color='r')
         axes[0].set_xlabel('z1',fontsize=title_size)
         axes[0].set_ylabel('z2',fontsize=title_size)
         axes[0].set_title('phase space', fontsize=title_size)
@@ -176,21 +178,26 @@ def handle_matrix(a_values,time_range,ini):
     input:matrix/time_range[100,1]/ini
     output:[100,9]+解z1和z2的表达式
     '''
+    print("ini",ini)
+    print("a_values",a_values)
 
     z1, z2,solu = generate_2order_data(a_values,
                                   z1_ini=ini[0][0],
                                   z2_ini=ini[0][1],
                                   time_range=time_range)
+
+    print("solu",solu)
+
     # condition重复成100*6
     condition = np.concatenate((ini, a_values), axis=0)
     condition = condition.reshape(1, 6)
     #把solu重复
     solu = np.repeat(solu, 100, axis=0)
     solu = solu.reshape(100, 1)
-    print(solu)
 
     ic_condition = np.repeat(condition, 100, axis=0)
     time_range = np.expand_dims(time_range, axis=0)
+
     time_range = time_range.transpose()
     data = np.concatenate((ic_condition,time_range), axis=1)
     # 使用np.expand_dims函数增加一个维度
@@ -209,30 +216,130 @@ def visual_data():
     提供相位图，时间图，频谱图
     '''
 import torch
+import pandas as pd
+import re
+
+
+def generate_matrices(scope=[-5,6],step=1):
+    '''
+    :param scope:element in matrix's change
+    scope[0] is the low limit
+    scope[1] is the high limit
+    :param step: the step of element change
+    default is 1
+    :return: [scope**4,2,2]
+    '''
+    low_limit=scope[0]
+    high_limit=scope[1]
+    matrices = []
+    # ergodic all the matrix
+    for i in range(low_limit, high_limit,step):
+        for j in range(low_limit, high_limit,step):
+            for k in range(low_limit, high_limit,step):
+                for l in range(low_limit, high_limit,step):
+                    matrix = [[i, j], [k, l]] #【i，j】row
+                    matrices.append(matrix)   #【k,l】row
+
+    return np.array(matrices)
+
+def generate_ini(scope=[-5,5],step=1):
+    '''
+    :param scope:element in matrix's change
+    scope[0] is the low limit
+    scope[1] is the high limit
+    :param step: the step of element change
+    default is 1
+    :return: [scope**4,2,1]
+    '''
+    low_limit=scope[0]
+    high_limit=scope[1]
+    ini = []
+    # ergodic all the vector
+    for i in range(low_limit, high_limit,step):
+        for j in range(low_limit, high_limit,step):
+            ini.append([[i,j]])
+    return np.array(ini)
+def get_dict_solu(solus)->list:
+    '''
+    :param solu: z1=z1(t),z2=z2(t)
+    :return: list
+    '''
+    dict_sol_list= []
+    for i in range(solus.shape[0]):
+        covert = solus[i][0]
+        # 使用正则表达式找到所有键值对
+        pattern = r"'(\w+)': '([^']+)'"
+        matches = re.findall(pattern, covert)
+        # convert to dict
+        dict_sol = {k: v for k, v in matches}
+        dict_sol_list.append(dict_sol)
+
+    return dict_sol_list
+
+
 if __name__ == '__main__':
 
-    # 定义输入矩阵A
-    a_values = [[1, 1],[4,-2]]# 按照行的模式
-    ini=[[1,0]]
-    # 定义时间范围
-    time_range = np.linspace(0, 2, 100)
-    #1*100*9的数据维度
-    result=np.zeros((1,100,10))
-    # 制作数据集
-    for i in range(1):
-        data=handle_matrix(a_values,time_range,ini)
+    # #matrix_ergodic
+    # matrices_array = generate_matrices(scope=[-2,2],step=1)
+    # print(matrices_array.shape)  # suppose (number, 2, 2)
+    # # time range
+    # time_range = np.linspace(0, 2, 100)
+    # #ini condition
+    # ini = generate_ini(scope=[-2,2],step=1)
+    # print(ini.shape)  # suppose (number, 2, 1)
+    #
+    # #save result
+    # result=np.zeros((1,100,10))
+    # # data_set
+    #
+    # for i in range(matrices_array.shape[0]):
+    #     for j in range(ini.shape[0]):
+    #         data=handle_matrix(matrices_array[i],time_range,ini[j])
+    #         new_result = np.expand_dims(data, axis=0)
+    #         np.savetxt('./2nd_dataset/data'+str(i)+'.csv',data,
+    #                     delimiter=',',header=header_4csv,
+    #                     fmt='%s')
+    #         result = np.concatenate((result, new_result), axis=0)
+    # #cut the first zero dimesion
+    # result=result[1:,:,:]
+    # print(result.shape)
+    # #save the result
+    # for i in range(result.shape[0]):
+    #     np.savetxt('./2nd_dataset/data'+str(i)+'.csv',result[i],
+    #                delimiter=',',header=header_4csv,
+    #                fmt='%s')
+    #     print("i"+"save")
+    # #cut the solution because it is of str type
+    # tensor=result[:,:,:-1].astype(np.float32)
+
+    # #read_csv, the last two columns are functions(str type)
+
+    data_all = np.zeros((1, 100, 9))
+    solu_all= np.zeros((1, 1))
+    for i in range(182,183,1):
+        data=np.loadtxt('./2nd_dataset/data'+str(i)+'.csv',
+                        delimiter=',',
+                        dtype=np.float32,
+                        usecols=range(9))
+
         new_result = np.expand_dims(data, axis=0)
-        result = np.concatenate((result, new_result), axis=0)
-    #消除第一个全零的维度
-    result=result[1:,:,:]
-    #tensor=result[:,:,0:].astype(np.float32)
-    #保存csv
-    np.savetxt('data.csv',result[0],delimiter=',',fmt='%s')
-    exit()
-    #保存tesnor
-    tensor=torch.from_numpy(tensor)
-    print(result.shape)
-    # 画出相空间轨迹图
+
+        solution_label=pd.read_csv('./2nd_dataset/data'+str(i)+'.csv',
+                                   usecols=[9,10])
+        solu = solution_label['sol_z1'][0] + solution_label['sol_z2'][0]
+
+        new_solu= np.expand_dims(solu, axis=0)
+        new_solu=new_solu.reshape(1,1)
+
+        solu_all= np.concatenate((solu_all, new_solu), axis=0)
+        data_all=np.concatenate((data_all,new_result),axis=0)
+    #cut the first zero value dimesion
+    data_all=data_all[1:,:,:]
+    solu_all=solu_all[1:,:]
+    list_sol=get_dict_solu(solu_all)
+    print(list_sol)
+    visual_plt.plot_visual(data_all,
+                           solutions=list_sol)
 
 
 
