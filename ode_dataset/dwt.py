@@ -5,12 +5,20 @@ import matplotlib.gridspec as gridspec
 
 
 
-def help_dwt(time_range,time_series:list,wavelet_str='haar',level_num=4):
+def help_dwt(time_range,
+             time_series:list,
+             wavelet_str='haar',
+             level_num=4,
+             solutions_dict=0):
     '''
     for DWT
     input time_series(two functions)
     output dwt-figure
+    solutions eg
+    {'z1_solu': 'z1=sin(t) + cos(t)', 'z2_solu': 'z2=-sin(t) + cos(t)'}
     '''
+
+    print('solutions:',solutions_dict)
 
     time=time_range
     #find the max
@@ -36,13 +44,14 @@ def help_dwt(time_range,time_series:list,wavelet_str='haar',level_num=4):
         # coeffs
 
         ax0 = fig.add_subplot(gs[i, 0])
-
-        ax0.scatter(x_coords,coeff[0], label='z1(t)', color='blue')
-        ax0.scatter(x_coords,coeff[1], label='z2(t)', color='k')
+        ax0.scatter(x_coords,coeff[0], label='z1(t)'+solutions_dict['z1_solu'],
+                    color='blue')
+        ax0.scatter(x_coords,coeff[1], label='z2(t)'+solutions_dict['z1_solu'],
+                    color='k')
         ax0.legend(loc='upper right')
         ax0.set_title('wavelet coefficient of '+wavelet_str+'_'+labels[i],
                       fontsize=15)
-        ax0.set_xlabel('t',fontsize=15)
+        ax0.set_xlabel('number of coeffs',fontsize=15)
 
         # plot Wavelet function
         ax1 = fig.add_subplot(gs[i, 1])
@@ -88,9 +97,11 @@ def help_dwt(time_range,time_series:list,wavelet_str='haar',level_num=4):
                  'and Original & Reconstructed Signals',fontsize=20)
     plt.tight_layout()
     plt.subplots_adjust(top=0.92, wspace=0.1)
-    plt.show()
+
+
 
 if __name__ == '__main__':
-    help_dwt(time_range=np.linspace(0,2,100),time_series=[np.linspace(0, 2, 2*50, endpoint=False),
-                          np.sin(np.linspace(0, 2, 2*50, endpoint=False))])
+    print("this is for dwt")
+    # help_dwt(time_range=np.linspace(0,2,100),time_series=[np.linspace(0, 2, 2*50, endpoint=False),
+    #                       np.sin(np.linspace(0, 2, 2*50, endpoint=False))])
     #print(pywt.wavelist(kind='discrete'))

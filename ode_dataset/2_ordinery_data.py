@@ -15,11 +15,10 @@ z2 = sp.Function('z2')(t)
 #初始条件z2(0)是-5到5 共11
 #所以数据集相当于 11的6次方
 #时间0-2s 100个点
-
 #head_csv
 header_4csv = 'z1_ini,z2_ini,a11,a12,a21,a22,t,z1,z2,sol_z1,sol_z2'
-
-
+visual_save_path='./2nd_dataset/visual'
+data_csv_number = [182,183]
 def demo():
     # 定义输入矩阵A
     a_values = [  # 可以添加更多的矩阵
@@ -172,7 +171,6 @@ def generate_2order_data(A_matrix,z1_ini,z2_ini,time_range):
         z1_values.append(z1_func(time_range[j]))
         z2_values.append(z2_func(time_range[j]))
     return  z1_values,z2_values,solu
-
 def handle_matrix(a_values,time_range,ini):
     '''
     input:matrix/time_range[100,1]/ini
@@ -211,14 +209,10 @@ def handle_matrix(a_values,time_range,ini):
     # 将solu和data合并为一个数组
     data = np.concatenate((data, solu), axis=1)
     return data
-def visual_data():
-    '''
-    提供相位图，时间图，频谱图
-    '''
-import torch
+
 import pandas as pd
 import re
-
+import os
 
 def generate_matrices(scope=[-5,6],step=1):
     '''
@@ -241,7 +235,6 @@ def generate_matrices(scope=[-5,6],step=1):
                     matrices.append(matrix)   #【k,l】row
 
     return np.array(matrices)
-
 def generate_ini(scope=[-5,5],step=1):
     '''
     :param scope:element in matrix's change
@@ -313,10 +306,10 @@ if __name__ == '__main__':
     # tensor=result[:,:,:-1].astype(np.float32)
 
     # #read_csv, the last two columns are functions(str type)
-
     data_all = np.zeros((1, 100, 9))
     solu_all= np.zeros((1, 1))
-    for i in range(182,183,1):
+
+    for i in data_csv_number:
         data=np.loadtxt('./2nd_dataset/data'+str(i)+'.csv',
                         delimiter=',',
                         dtype=np.float32,
@@ -333,13 +326,19 @@ if __name__ == '__main__':
 
         solu_all= np.concatenate((solu_all, new_solu), axis=0)
         data_all=np.concatenate((data_all,new_result),axis=0)
-    #cut the first zero value dimesion
+        #cut the first zero value dimesion
     data_all=data_all[1:,:,:]
+    print(data_all.shape)
     solu_all=solu_all[1:,:]
     list_sol=get_dict_solu(solu_all)
-    print(list_sol)
-    visual_plt.plot_visual(data_all,
-                           solutions=list_sol)
+        #visual save
+    if(os.path.exists(visual_save_path)==False):
+            os.mkdir(visual_save_path)
+    for i in range(2):
+        visual_plt.plot_visual(data_all[i,:,:],
+                                   solutions=list_sol[i],
+                                   savepath=visual_save_path,
+                                   save_number=i)
 
 
 

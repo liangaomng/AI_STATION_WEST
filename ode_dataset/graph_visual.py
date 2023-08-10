@@ -24,5 +24,6 @@ build_dag(expr, graph=G)
 # 可视化
 pos = nx.spring_layout(G)
 labels = {v: G.nodes[v]['label'] for v in G.nodes()}
-nx.draw(G, pos, with_labels=True, labels=labels, node_size=3000, node_color='skyblue', font_size=10)
+nx.draw(G, pos, with_labels=True, labels=labels,
+        node_size=3000, node_color='skyblue', font_size=10)
 plt.show()
