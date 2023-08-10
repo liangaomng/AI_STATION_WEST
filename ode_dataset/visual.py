@@ -100,7 +100,11 @@ def plot_visual(data,solutions:list):
         for spine in ax.spines.values():
             spine.set_edgecolor('black')
             spine.set_linewidth(line_size)  # 设置线宽为2
-    help_dwt(z1_t,wavelet_str='db1',level_num=4)
+    print(z1_t.shape)
+    z1_t=z1_t.reshape(-1)
+    z2_t=z2_t.reshape(-1)
+    help_dwt(time_range=time_range,time_series=[z1_t,z2_t],
+             wavelet_str='db1',level_num=4)
 
     plt.tight_layout()  #
     # close and save
