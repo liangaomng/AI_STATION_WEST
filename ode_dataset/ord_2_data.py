@@ -13,8 +13,8 @@ z2 = sp.Function('z2')(t)
 #a11的变化规律如下 -5到5 共11
 #初始条件z1(0)是-5到5 共11
 #初始条件z2(0)是-5到5 共11
-#所以数据集相当于 11的6次方
-#时间0-2s 100个点
+#
+#t: 0-2s 100个点
 #head_csv
 header_4csv = 'z1_ini,z2_ini,a11,a12,a21,a22,t,z1,z2,sol_z1,sol_z2'
 visual_save_path='./2nd_dataset/visual'
@@ -174,7 +174,7 @@ def generate_2order_data(A_matrix,z1_ini,z2_ini,time_range):
 def handle_matrix(a_values,time_range,ini):
     '''
     input:matrix/time_range[100,1]/ini
-    output:[100,9]+解z1和z2的表达式
+    output:[100,9]+solu_z1和solu_z2's expression
     '''
     print("ini",ini)
     print("a_values",a_values)
@@ -269,41 +269,31 @@ def get_dict_solu(solus)->list:
 
     return dict_sol_list
 
+def produce_data():
+    #matrix_ergodic 256
+    matrices_array = generate_matrices(scope=[0, 1], step=1)
+    print(matrices_array.shape[0])
+
+    time_range = np.linspace(0, 2, 100)
+    ini = generate_ini(scope=[1, 2], step=1)
+    print(ini.shape[0])
+    # save result
+    result = np.zeros((1, 100, 10))
+    for i in range(matrices_array.shape[0]):
+        for j in range(ini.shape[0]):
+            data=handle_matrix(matrices_array[i],time_range,ini[j])
+            new_result = np.expand_dims(data, axis=0)
+            np.savetxt('./2nd_dataset/data'+str(i)+'.csv',data,
+                        delimiter=',',header=header_4csv,
+                        fmt='%s')
+            result = np.concatenate((result, new_result), axis=0)
+    #cut the first zero dimesion
+    result=result[1:,:,:]
+    print(result.shape)
+
 
 if __name__ == '__main__':
-
-    # #matrix_ergodic
-    # matrices_array = generate_matrices(scope=[-2,2],step=1)
-    # print(matrices_array.shape)  # suppose (number, 2, 2)
-    # # time range
-    # time_range = np.linspace(0, 2, 100)
-    # #ini condition
-    # ini = generate_ini(scope=[-2,2],step=1)
-    # print(ini.shape)  # suppose (number, 2, 1)
-    #
-    # #save result
-    # result=np.zeros((1,100,10))
-    # # data_set
-    #
-    # for i in range(matrices_array.shape[0]):
-    #     for j in range(ini.shape[0]):
-    #         data=handle_matrix(matrices_array[i],time_range,ini[j])
-    #         new_result = np.expand_dims(data, axis=0)
-    #         np.savetxt('./2nd_dataset/data'+str(i)+'.csv',data,
-    #                     delimiter=',',header=header_4csv,
-    #                     fmt='%s')
-    #         result = np.concatenate((result, new_result), axis=0)
-    # #cut the first zero dimesion
-    # result=result[1:,:,:]
-    # print(result.shape)
-    # #save the result
-    # for i in range(result.shape[0]):
-    #     np.savetxt('./2nd_dataset/data'+str(i)+'.csv',result[i],
-    #                delimiter=',',header=header_4csv,
-    #                fmt='%s')
-    #     print("i"+"save")
-    # #cut the solution because it is of str type
-    # tensor=result[:,:,:-1].astype(np.float32)
+    produce_data()
 
     # #read_csv, the last two columns are functions(str type)
     data_all = np.zeros((1, 100, 9))
@@ -326,12 +316,12 @@ if __name__ == '__main__':
 
         solu_all= np.concatenate((solu_all, new_solu), axis=0)
         data_all=np.concatenate((data_all,new_result),axis=0)
-        #cut the first zero value dimesion
+    #cut the first zero value dimension
     data_all=data_all[1:,:,:]
     print(data_all.shape)
     solu_all=solu_all[1:,:]
     list_sol=get_dict_solu(solu_all)
-        #visual save
+    #visual save
     if(os.path.exists(visual_save_path)==False):
             os.mkdir(visual_save_path)
     for i in range(2):

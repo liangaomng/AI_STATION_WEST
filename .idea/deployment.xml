@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="root@172.16.78.10:30454 password (54)" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="root@172.16.78.10:30454 password">
         <serverdata>
@@ -338,7 +338,49 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="root@172.16.78.10:30454 password (55)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (56)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (57)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (58)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (59)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="root@172.16.78.10:30454 password (6)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (60)">
         <serverdata>
           <mappings>
             <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
