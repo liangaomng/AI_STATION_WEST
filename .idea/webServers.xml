@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="800d7c27-b4a0-4b3c-8d32-1fd58175ede3" name="ode_dataset">
+        <fileTransfer rootFolder="/liangaoming/conda_lam/neural_find_sol/ode_dataset" accessType="SFTP" host="172.16.78.10" port="30454" sshConfigId="a7c2c13d-654e-4524-84f4-6c9a94026e0e" sshConfig="root@172.16.78.10:30454 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="b5fe1f87-8ae2-48d5-8dc3-9f3e819d2671" name="wgan_2nd_solu">
+        <fileTransfer rootFolder="/liangaoming/conda_lam/neural_find_sol/wgan_2nd_solu" accessType="SFTP" host="172.16.78.10" port="30454" sshConfigId="a7c2c13d-654e-4524-84f4-6c9a94026e0e" sshConfig="root@172.16.78.10:30454 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

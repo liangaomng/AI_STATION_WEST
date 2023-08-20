@@ -26,6 +26,7 @@ if __name__ == "__main__":
     print(os.getenv("PYTHONPATH"))
     print(os.getcwd())
     print(train_init_para.zdimension_Gap)
+    exit()
     # 初始化Ray
     ray.init(local_mode=True)  # 在本地模式下运行
     # 定义超参数搜索空间

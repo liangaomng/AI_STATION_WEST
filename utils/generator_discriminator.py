@@ -4,13 +4,15 @@ import torch
 import torch.nn as nn
 import numpy as np
 from utils.wgan_data import *
- # 定义生成器“基的系数网络”, 输入是一维度的噪声，输出是[100,1]的解
+'''
+    define generator network 
+    input: n dimension noise 
+    output: a solution which combine different basis
+'''
 class Generator(nn.Module):
     def __init__(self,config):
-
         super(Generator, self).__init__()
         hidden_1=config["g_neural_network_width"]
-
 
         self.model = nn.Sequential(
             nn.Linear(300+config["zdimension_Gap"],10),
@@ -20,8 +22,8 @@ class Generator(nn.Module):
             nn.Linear(hidden_1, 2),
             nn.LeakyReLU()
         )
-        print("***have_init")
-    #kaiming 初始化
+        print("***generator_init")
+    #kaiming_init
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 torch.nn.init.kaiming_normal_(m.weight,a=0,mode='fan_in')
@@ -29,32 +31,28 @@ class Generator(nn.Module):
     energy=torch.zeros(batch_size,1,device="cuda") #消耗的energy
     generate_data=torch.zeros(batch_size,100,device="cuda")
     math_matrix=[]
-    def create_matrix(self,data_t): #矩阵function
+    def create_matrix(self,data_t): #basis function
 
         data_numpy=data_t.cpu().clone().numpy()
-        #构建数据矩阵，用来作用于数学矩阵，每一个batch为一列，100为行
+        #data matrix:batch size is column, t_steps is rows
         data_matrix=sp.Matrix(data_numpy)
-
-        print("data_numpy",data_numpy.shape)
-        # 创建符号变量
+        #create symbol
         x = sp.symbols('x')
-        # 构建运算矩阵
+        # create matrix
         self.math_matrix = sp.Matrix([x**i for i in range(4)])
         print("math_matrix",self.math_matrix)
-        basis=[0,1,2,3]#基的系数 暂定 生成1，x^1,x^2,x^3
-
-        b_t=data_numpy
+        #create basis function
+        basis=[0,1,2,3]#x^0，x^1,x^2,x^3
+        #create result matrix
         result=np.zeros((batch_size,4,100))
-        print("b_t",b_t.shape)
-
         for i in range(4):
             result[:,i,:]=data_matrix[i,:].applyfunc(lambda elem:elem**basis[i])
         print("resultshape",result.shape)
-
-
-        # 打印函数的符号表示
+        # f_symbolic is symbols
         f_symbolic = sp.pretty(self.math_matrix)
-        return result[:,1,:],result[:,2,:],result[:,3,:]#返回三个列，表示生成的列 第一个列是1，后面就做了运算 [batch,1,100]
+        return result[:,1,:],result[:,2,:],result[:,3,:]#
+        #result[:,0,:] is 1
+        #shape:[batch,1,100]
 
     def print_coeff(self):
         print('coeff is',self.coeff)

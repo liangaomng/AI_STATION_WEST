@@ -8,7 +8,7 @@
             <JupyterConnectionParameters>
               <option name="managed" value="true" />
               <option name="port" value="8066" />
-              <option name="sdkHomePath" value="$USER_HOME$/anaconda3/envs/pygpu/bin/python" />
+              <option name="sdkHomePath" value="$USER_HOME$/anaconda3/bin/python" />
             </JupyterConnectionParameters>
           </value>
         </entry>

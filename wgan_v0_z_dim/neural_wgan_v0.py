@@ -54,7 +54,8 @@ def training(config,writer:SummaryWriter):
     # 初始化生成器和判别器
     config["init_para"].init_generator_discriminator(config)
     for epoch in range(config["epochs"]):
-        for i,batch_data in enumerate(ode_dataloader):#batch_data[0]是x，batch_data[1]是y
+        for i,batch_data in enumerate(ode_dataloader):
+            #batch_data[0]is x，batch_data[1]is y
             # 训练判别器
             config["init_para"].optimizer_d.zero_grad()
             condition_data=batch_data[0].float()#3个条件【batchsize,100,3】
