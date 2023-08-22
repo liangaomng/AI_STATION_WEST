@@ -10,6 +10,8 @@ from utils.wgan_data import *
     output: a solution which combine different basis
 '''
 class Generator(nn.Module):
+
+
     def __init__(self,config):
         super(Generator, self).__init__()
         hidden_1=config["g_neural_network_width"]
