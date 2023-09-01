@@ -3,6 +3,7 @@ import torch.nn as nn
 import sympy as sp
 import numpy as np
 
+
 import matplotlib.pyplot as plt
 '''
     class: generator
@@ -10,6 +11,147 @@ import matplotlib.pyplot as plt
     input: n dimension noise 
     output: a solution which combine different basis
 '''
+
+function_symbol=[]
+
+
+def clear_str_list():
+
+    global function_symbol
+    function_symbol=[]
+# 自定义层
+class Basis_Transform(nn.Module):
+    def __init__(self, input_dim, output_dim,basis_num=2,omega=0):
+
+        super(Basis_Transform, self).__init__()
+
+        self.x = sp.symbols('x')
+        # create func matrix -prior
+        #self.func_matrix = sp.Matrix([self.x ** i for i in range(basis_num)])
+        #for test
+        self.omega=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        self.func_matrix= sp.Matrix([0,sp.sin(self.omega*self.x),sp.cos(self.omega*self.x)])
+        #convert to function input x, output is the value of the function
+        self.funcs = [sp.lambdify(self.x, self.func_matrix[i]) for i in range(basis_num)]
+        # f_symbolic is symbols
+        self.f_symbolic = [self.func_matrix[i] for i in range(basis_num)]
+        # result_basis is the result of the basis function [100,basis_num]
+        self.result_basis = torch.zeros(100, basis_num, dtype=torch.float64, device='cuda')
+        self.result_basis = self.A_matrix()
+        self.result_basis = nn.Parameter(self.result_basis, requires_grad=False)
+        #coeffs
+        self.coeffs=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        self.coeffs.requires_grad_(False)
+        #energy
+        self.energy=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        self.energy.requires_grad_(False)
+        self.basis_num=basis_num
+
+
+    def updata_basis(self,omega):
+
+        self.omega=omega
+        batch_size, _ = self.omega.size()
+
+        self.func_matrix = sp.Matrix([0, sp.sin(self.omega * self.x), sp.cos(self.omega * self.x)])
+        # convert to function input x, output is the value of the function
+        self.funcs = [sp.lambdify(self.x, self.func_matrix[i]) for i in range(self.basis_num)]
+        # f_symbolic is symbols
+        self.f_symbolic = [self.func_matrix[i] for i in range(self.basis_num)]
+        # result_basis is the result of the basis function [100,basis_num]
+        self.result_basis = torch.zeros(100, self.basis_num,
+                                        dtype=torch.float64, device='cuda')
+        self.result_basis = self.A_matrix()
+        #analy_gradients
+        #add the gradient
+        # [batch,100,1]
+        global function_symbol
+        function_symbol.append(self.f_symbolic)
+
+
+    def A_matrix(self):
+
+        data_t_numpy=np.linspace(0,2,100)
+        # return the A matrix
+        for i, func in enumerate(self.funcs):
+            value=func(data_t_numpy)
+            value=torch.tensor(value,dtype=torch.float64)
+            self.result_basis[:, i] = value
+
+        return self.result_basis
+    def stat(self):
+        '''
+        :param coeffs: [batch,basis_num*2]
+        :return: energy[batch,2]
+        '''
+
+        batch_size, _ = self.coeffs.size()
+        self.energy = torch.zeros(batch_size,2, dtype=torch.float64, device='cuda')
+
+        for i in range(batch_size):
+            for j in range(self.basis_num):
+                #z1 energy
+                self.energy[i,0] += (self.coeffs[i, j] ** 2) * torch.norm(self.result_basis[:, j], p=2)
+                #z2 energy
+                self.energy[i,1]+= (self.coeffs[i, j+self.basis_num] ** 2) * torch.norm(self.result_basis[:, j], p=2)
+
+        return self.energy
+
+    def forward(self,x,omega):
+
+        self.updata_basis(omega)
+
+        # input x:[batch,basis_num*2] coeffs
+        batch_size, _= x.size()
+        self.coeffs = x#[batch,basis_num*2]
+
+        # x is the coeffs
+        x = x.view(batch_size,self.basis_num ,-1)  # [batch,basis_num,2]
+        #cal energy
+        self.stat()
+
+        fake=torch.zeros(batch_size,100,2,device="cuda")
+
+        # matmul with the weight
+        for i in range(batch_size):
+            #z1_t
+            fake[i,:,0] = torch.matmul(self.result_basis,
+                                       x[i,:,0])
+            #z2_t
+            fake[i,:,1] = torch.matmul(self.result_basis,
+                                       x[i,:,1])
+        #fake is output [batch,100,2]
+
+        return fake,self.energy,x,self.result_basis
+
+class omega_generator(nn.Module):
+    def __init__(self,input_dim=202,output_dim=1):
+        super(omega_generator, self).__init__()
+        self.omega_fc1=nn.Sequential(
+            nn.Linear(input_dim,254),
+            nn.LeakyReLU(0.2),
+            nn.Linear(254,128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128,output_dim),
+        )
+        # kaiming_init
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+
+    def forward(self,x):
+        '''
+        :param x: [batch,101,2] ini &gradinets 101*2
+        :return: [batch,1]
+        '''
+        x=x.view(-1,202)
+        self.omega=self.omega_fc1(x)
+        #discrete
+        self.omega=RoundWithPrecisionSTE.apply(self.omega,2)
+
+        return self.omega
+#there is a matrix
+
 class Generator(nn.Module):
     '''
     there are four items in the class
@@ -17,126 +159,88 @@ class Generator(nn.Module):
     '''
     init fuction
     '''
-    def __init__(self,config:dict):
+    def __init__(self,config:dict,basis_num,omega_value):
 
         super(Generator, self).__init__()
         hidden_width=config["g_neural_network_width"]
         #structure
-        self.model = nn.Sequential(
-            nn.Linear(config["zdimension_Gap"], hidden_width),
-            nn.LeakyReLU(),
+        self.model_coeff = nn.Sequential(
+            nn.Linear(config["zdimension_Gap"]+10, hidden_width),
+            nn.LeakyReLU(0.2),
             nn.Linear(hidden_width, hidden_width),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_width, 4*2),
-            nn.LeakyReLU()
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_width, basis_num*2), #2 is the z1 and z2
+        )
+        #condition
+        self.cond_fc1=nn.Sequential(
+            nn.Linear(202,254),
+            nn.LeakyReLU(0.2),
+            nn.Linear(254,128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128,10),
         )
         # kaiming_init
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
-        self.batch_size= config["batch_size"]
-        self.energy_regurla = 0  # regulariztion
-        self.energy = torch.zeros(self.batch_size, 1, device="cuda")  # dot with itself
-        self.generate_data = torch.zeros(self.batch_size,100,2, device="cuda")  # generate data z1_t and z2_t
-        self.math_matrix = []  # basis function
-        print("***generator_init")
-    def genertor_policy(self):
-        '''
-        according the frequency of the basis function to generate the policy
-        :return:
-        '''
-        pass
-
-    '''
-    func: create_matrix
-    meaning:accoring to the basis function to return column of
-    each basis data
-    retun different function basis data of data_t and list of str of basis
-    '''
-    def create_basis_matrix(self,data_t): #basis function
-
-        basis_num=4
-        data_t_numpy=data_t.cpu().clone().numpy()
-        #create symbol
-        x = sp.symbols('x')
-        # create func matrix -prior
-        self.func_matrix = sp.Matrix([x**i for i in range(basis_num)])
-        print("math_matrix",self.func_matrix)
-
-        #convert to function. input x, output is the value of the function
-        funcs = [sp.lambdify(x, self.func_matrix[i]) for i in range(basis_num)]
-
-        #create result matrix
-        result_basis=np.zeros((self.batch_size,100,basis_num))
-        for i,func in enumerate(funcs):
-            result_basis[:,:,i]=func(data_t_numpy[:,:,0])
-
-        # f_symbolic is symbols
-        self.f_symbolic =[self.func_matrix[i] for i in range(4)]
-        print("f_symbolic",self.f_symbolic) #like [1,x,x**2,x**3]
-
-        #return differnt the basis function f(data_t) [batch,100,4]
-        #and the str symbol of the basis function [1,x,x**2,x**3]
-        return result_basis,self.f_symbolic
-
-
-    def print_coeff(self):
-        print('coeff is',self.coeff)
-        return self.coeff
-
-    #calculate the data energy and coeffs,
-    #suppose 4 basis function
-    #input:    coeff[batch,4,2] z1_t and z2_t
-    #output     generator data[batch,100,2] z1_t and z2_t
-    def calculate_generate(self,coeff,data_t):
-
-        #4 prior --future to control the prior
-        basis_matrix=np.ones((self.batch_size,100,4))
-        basis_matrix,basis_str=self.create_basis_matrix(data_t)
-
-        #convert to tensor
-        num_matirx_tensor=torch.from_numpy(basis_matrix).to(device="cuda")
-
-        #2 column data is  [batch,100,2]---generate_data: z1_t & z2_t
-        for i in range(self.batch_size):
-            a=coeff[i,0]*num_matirx_tensor[i,:,0] \
-                      +coeff[i,1]*num_matirx_tensor[i,:,1]\
-                      +coeff[i,2]*num_matirx_tensor[i,:,2]\
-                       +coeff[i,3]*num_matirx_tensor[i,:,3]
-            b=coeff[i,4]*num_matirx_tensor[i,:,0] \
-                        +coeff[i,5]*num_matirx_tensor[i,:,1]\
-                        +coeff[i,6]*num_matirx_tensor[i,:,2]\
-                        +coeff[i,7]*num_matirx_tensor[i,:,3]
-
-            #z1_t
-            self.generate_data[i,:,0]=a
-            #z2_t
-            self.generate_data[i, :, 1] = b
-            # cal the energy of the sum basis
-            self.energy[i,:]=(coeff[i,0]**2)*torch.norm(num_matirx_tensor[i,:,0],p=2)\
-               +(coeff[i,1]**2)*torch.norm(num_matirx_tensor[i,:,1],p=2)\
-               +(coeff[i,2]**2)*torch.norm(num_matirx_tensor[i,:,2],p=2)\
-               +(coeff[i,3]**2)*torch.norm(num_matirx_tensor[i,:,3],p=2)\
-               +(coeff[i,4]**2)*torch.norm(num_matirx_tensor[i,:,0],p=2)\
-               +(coeff[i,5]**2)*torch.norm(num_matirx_tensor[i,:,1],p=2)\
-               +(coeff[i,6]**2)*torch.norm(num_matirx_tensor[i,:,2],p=2)\
-               +(coeff[i,7]**2)*torch.norm(num_matirx_tensor[i,:,3],p=2)
-
-        print("generate_data_shape", self.generate_data.shape)
-
-        return self.generate_data,basis_matrix,basis_str
+        self.fake_data=torch.zeros(config["batch_size"],100,2,device="cuda").requires_grad_(True)
 
     '''
     func: forward
     input: noise + data_t
     return :data,energy,coeffs
     '''
-    def forward(self,x,data_t):
-        #check the input data_t=[100*1]
-        assert data_t.shape[1]==100 and data_t.shape[2]==1
-        self.coeff=self.model(x)
-        data,basis_matrix,basis_str=self.calculate_generate(self.coeff,data_t)
-        return data,self.energy,self.coeff,basis_matrix,basis_str
+    def return_symbol(self):
+        return self.f_symbolic
+
+    def put_in_the_matrix(self):
+        '''
+        :param coeffs: [batch,basis_num,2]
+        :return: fake [batch,100,2]，
+        :note: 100 is the time step
+        '''
+        _, coeff_number, z_number = self.coeff.size()
+        # matmul with the weight and generate the fake data
+        # [100,1]=[100,basis_num]*[basis_num,1]
+        # z1_t [batch,100,1]
+        self.fake_data[:, :, 0] = torch.matmul(self.result_basis.double(),
+                                                   self.coeff[:, :,0])
+        # z2_t [batch,100,1]
+        self.fake_data[:, :, 1] = torch.matmul(self.result_basis.double(),
+                                                   self.coeff[:, :,1])
+        # fake is output [batch,100,2]
+        return self.fake_data
+
+    def forward(self,x,condition,omega_value,basis_num=3):
+        #condition is [batch,101,2]
+        #cat the noise and data_t
+        condition=condition.view(-1,202)
+        #embed the condition to 10 dim
+        condition_out=self.cond_fc1(condition)
+        # x is [batch,noise+10]
+        x=torch.cat((x,condition_out),dim=1)
+        #cal the coeff 【batch，basis_num,2】
+        self.coeff=self.model_coeff(x)
+        self.coeff=self.coeff.reshape(-1,basis_num,2)
+        # self.coeff=RoundWithPrecisionSTE.apply(self.coeff,1)
+        fake=self.put_in_the_matrix()
+        print(fake)
+        exit()
+        #update symbolic now_ we
+
+
+        return fake,energy,coeffs,basis_matrix
+
+
+class RoundWithPrecisionSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, decimal_places=0):
+        multiplier = 10 ** decimal_places
+        return torch.round(input * multiplier) / multiplier
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, None  # identity gradient
 
 
 '''
@@ -153,20 +257,23 @@ class Discriminator(nn.Module):
         self.flatten = nn.Flatten()
 
         self.model = nn.Sequential(
-            nn.Linear(200, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, 64),
-            nn.LeakyReLU(),
+            nn.Linear(400, 512),
+            nn.LeakyReLU(0.2),
+            nn.Linear(512, 64),
+            nn.LeakyReLU(0.2),
             nn.Linear(64, 1),
+
         )
         #kaiming init
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 torch.nn.init.kaiming_normal_(m.weight,a=0,mode='fan_in')
 
-    def forward(self, x):
-        print(x.shape)
+    def forward(self, x,grad):
+        #grad is [batch,100,2]
+        grad=self.flatten(x)
         x=self.flatten(x)
+        x=torch.cat((x,grad),dim=1)
         critic=self.model(x)
         return critic
 
@@ -189,22 +296,21 @@ def compute_w_div(real_samples, real_out, fake_samples, fake_out):
     p = 6
     # cal the gradient of real samples
     weight = torch.full((real_samples.size(0),1), 1, device='cuda')
-    print("weight",weight.shape)
-    print("real_out",real_out.shape)
-    print("real_samples",real_samples.shape)
+
     #adjust the weight
     real_grad = torch.autograd.grad(outputs=real_out,
                               inputs=real_samples,
                               grad_outputs=weight,
                               create_graph=True,
                               retain_graph=True, only_inputs=True)[0]
+
     # L2 real norm
     real_grad_norm = real_grad.view(real_grad.size(0), -1).pow(2).sum(1)
-    print(real_grad_norm.shape)
+
     # fake gradient
     fake_grad = torch.autograd.grad(outputs=fake_out,
                               inputs=fake_samples,
-                              grad_outputs=weight,
+                              grad_outputs=torch.ones_like(fake_out),
                               create_graph=True,
                               retain_graph=True, only_inputs=True)[0]
     # L2 fake norm

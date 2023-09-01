@@ -23,7 +23,12 @@ def help_fft(x):
 
     # max norm
     max_value = np.max(spectrum)
-    normalized_spectrum = spectrum / max_value
+    min_value=np.min(spectrum)
+    if(max_value==0):
+        # nan
+        normalized_spectrum=[np.nan for i in range(len(spectrum))]
+    else:
+        normalized_spectrum = spectrum / max_value
 
 
     return frequencies,normalized_spectrum
