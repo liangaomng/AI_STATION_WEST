@@ -27,25 +27,31 @@ class Basis_Transform(nn.Module):
 
         self.x = sp.symbols('x')
         # create func matrix -prior
+        self.func_matrix = sp.Matrix([self.x ** i for i in range(basis_num)])
+
         #self.func_matrix = sp.Matrix([self.x ** i for i in range(basis_num)])
-        #for test
-        self.omega=nn.Parameter(torch.tensor(0,dtype=torch.float64))
-        self.func_matrix= sp.Matrix([0,sp.sin(self.omega*self.x),sp.cos(self.omega*self.x)])
-        #convert to function input x, output is the value of the function
-        self.funcs = [sp.lambdify(self.x, self.func_matrix[i]) for i in range(basis_num)]
-        # f_symbolic is symbols
-        self.f_symbolic = [self.func_matrix[i] for i in range(basis_num)]
-        # result_basis is the result of the basis function [100,basis_num]
-        self.result_basis = torch.zeros(100, basis_num, dtype=torch.float64, device='cuda')
-        self.result_basis = self.A_matrix()
-        self.result_basis = nn.Parameter(self.result_basis, requires_grad=False)
-        #coeffs
-        self.coeffs=nn.Parameter(torch.tensor(0,dtype=torch.float64))
-        self.coeffs.requires_grad_(False)
-        #energy
-        self.energy=nn.Parameter(torch.tensor(0,dtype=torch.float64))
-        self.energy.requires_grad_(False)
-        self.basis_num=basis_num
+        #
+        # self.x = sp.symbols('x')
+        # # create func matrix -prior
+        # #self.func_matrix = sp.Matrix([self.x ** i for i in range(basis_num)])
+        # #for test
+        # self.omega=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        # self.func_matrix= sp.Matrix([0,sp.sin(self.omega*self.x),sp.cos(self.omega*self.x)])
+        # #convert to function input x, output is the value of the function
+        # self.funcs = [sp.lambdify(self.x, self.func_matrix[i]) for i in range(basis_num)]
+        # # f_symbolic is symbols
+        # self.f_symbolic = [self.func_matrix[i] for i in range(basis_num)]
+        # # result_basis is the result of the basis function [100,basis_num]
+        # self.result_basis = torch.zeros(100, basis_num, dtype=torch.float64, device='cuda')
+        # self.result_basis = self.A_matrix()
+        # self.result_basis = nn.Parameter(self.result_basis, requires_grad=False)
+        # #coeffs
+        # self.coeffs=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        # self.coeffs.requires_grad_(False)
+        # #energy
+        # self.energy=nn.Parameter(torch.tensor(0,dtype=torch.float64))
+        # self.energy.requires_grad_(False)
+        # self.basis_num=basis_num
 
 
     def updata_basis(self,omega):
@@ -203,10 +209,10 @@ class Generator(nn.Module):
         # matmul with the weight and generate the fake data
         # [100,1]=[100,basis_num]*[basis_num,1]
         # z1_t [batch,100,1]
-        self.fake_data[:, :, 0] = torch.matmul(self.result_basis.double(),
+        self.fake_data[:, :, 0] = torch.matmul(self.result_basis,
                                                    self.coeff[:, :,0])
         # z2_t [batch,100,1]
-        self.fake_data[:, :, 1] = torch.matmul(self.result_basis.double(),
+        self.fake_data[:, :, 1] = torch.matmul(self.result_basis,
                                                    self.coeff[:, :,1])
         # fake is output [batch,100,2]
         return self.fake_data
@@ -218,6 +224,7 @@ class Generator(nn.Module):
         #embed the condition to 10 dim
         condition_out=self.cond_fc1(condition)
         # x is [batch,noise+10]
+
         x=torch.cat((x,condition_out),dim=1)
         #cal the coeff 【batch，basis_num,2】
         self.coeff=self.model_coeff(x)

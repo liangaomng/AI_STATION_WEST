@@ -80,6 +80,9 @@ def train(D,G,G_omega,z_dimen,num_epoch=1000):
         start_time=time.time()
         for i,(batch_data,label) in enumerate(train_loader):
 
+            #every iteration：we pick the basis_function and record them
+           gan_nerual.pick_basis_function(config["prior_knowledge"])
+
            num_batch=batch_data.size(0)
            #label is the csv name
            dict_str_solu=uf.read_real_str(label)
