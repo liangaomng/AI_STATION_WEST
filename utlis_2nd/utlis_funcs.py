@@ -83,31 +83,41 @@ and basis function' shape
 concludes:fake data and real data  and the real loss 
 '''
 def plot_critic_tensor_change(plot_path,writer,
-                              loss,variable_t,
+                              variable_t,
                               in_fake_data:torch.Tensor,
                               in_real_data:torch.Tensor,
-                              basis_str,basis_matrix:torch.Tensor,coeffs:torch.Tensor,solus_str,
-                              energy:torch.Tensor):
+                              basis_str,left_matrix:torch.Tensor,coeffs:torch.Tensor,solus_str,
+                            ):
+    '''
+    :param plot_path: str
+    :param writer:tensorboard
+    :param variable_t:[batch,100,1]
+    :param in_fake_data:[batch,100,2]
+    :param in_real_data:[batch,100,2]
+    :param basis_str:[batch*2] because 2 z1 and z2
+    :param basis_matrix: [batch,100,basis_num,2]
+    :param coeffs:[batch,6]
+    :param solus_str:a list that concludes batch*{'z1_solu': 'z1=sin(19*t) + cos(19*t)', 'z2_solu': 'z2=-sin(19*t) + cos(19*t)'}
+
+    '''
     #record count_critic_step
     global count_critic_step
-    #get the batch size
-    batch_size=in_fake_data.shape[0]
     count_critic_step+=1
-    basis_num=basis_matrix.shape[1]
+    #get the batch size
+    batch_size,_,_=in_fake_data.size()
+    basis_num=left_matrix.shape[2]
     #length of solus_str is batch_size
     assert len(solus_str)==batch_size
 
     # data process
     in_fake_data=in_fake_data.cpu().detach()
-    in_fake_data=in_fake_data.reshape(batch_size,100,2)
+
     in_real_data=in_real_data.cpu().detach()
     #in_real_data=in_real_data.reshape(batch_size,100,2)
     variable_t=variable_t[0,:,0].cpu().detach().numpy() #[100,1]
     coeffs=coeffs.cpu().detach().numpy() #[batch,basis_num*2] first are z1_t
 
-    coeffs = coeffs.reshape(batch_size, basis_num*2)
-
-    basis_matrix=basis_matrix.detach()#[100,basis_num]
+    basis_matrix=left_matrix.detach()#[batch,100,basis_num,2]
 
     #plot the sub figure
 
@@ -122,13 +132,12 @@ def plot_critic_tensor_change(plot_path,writer,
     ax4= plt.subplot(gs[4])
     ax5= plt.subplot(gs[5])
     title_size=50
-    print("basis_str_name",basis_str)
 
     for j in range(basis_num):
         #plot the basis data
         #note because of the multi-gpu training
-        #the basis_matrix is [100*gpu,4] but we record the first [100,4]
-        ax0.plot(variable_t, basis_matrix[0:100,j].cpu().numpy(),linewidth=5,
+        #basis_matrix [batch,100,basis_num,2]
+        ax0.plot(variable_t, basis_matrix[0,:,:,0].cpu().numpy(),linewidth=5,
                  label=basis_str[0][j])
         #fft basis_matrix
         basis_freqs, norm_spec,_ = get_top_frequencies_magnitudes_phases(basis_matrix[0:100,j],top_k=50,device="cpu")
@@ -539,7 +548,7 @@ def calculate_diff_grads(real_data:torch.tensor,data_t:torch.tensor,type="center
     derivatives=0
 
     if type=="center_diff":
-        print("using center_diff")
+
         central_diff = (real_data[:, 2:, :] - real_data[:, :-2, :]) / (2 * delta_t)
         start_diff = (real_data[:, 1, :] - real_data[:, 0, :]) / delta_t
         end_diff = (real_data[:, -1, :] - real_data[:, -2, :]) / delta_t
@@ -575,6 +584,8 @@ def calculate_fft(data,save_main_numbers=1):
         fft_result[i,:,1]=z2_top
 
     return fft_result
+
+
 
 
 

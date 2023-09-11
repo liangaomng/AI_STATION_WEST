@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 import torch.nn as nn
-import copy
+from tqdm import tqdm
 class CustomDataset(Dataset):
     def __init__(self, file_path):
         # readt .pt
@@ -25,7 +25,6 @@ class CustomDataset(Dataset):
         data = self.data[index]
         label = self.label[index]
         # pre-processing
-
         return data, label
 
     def __len__(self):
@@ -46,9 +45,10 @@ config={
         'zdimension_Gap':10,
         "save_plot_tb_path":"../tb_info/wgan_2nd_trainA_100_5",
         "lamba_ini":10,
-        "lamba_deriva":10,
+        "lamba_grad":1,
         "lamba_gp":10,
-        "prior_knowledge":{"basis_1": 0, "basis_2": "sin", "basis_3": "cos"}
+        "prior_knowledge":{"basis_1": "x**0", "basis_2": "sin", "basis_3": "cos"},
+        "freq_threshold":1e-3,
         }
 #deivice
 device='cuda'
@@ -74,61 +74,52 @@ def train(D,G,G_omega,z_dimen,num_epoch=1000):
     criterion_ini = nn.MSELoss()
     criterion_deriva = nn.MSELoss()
     criterion_freq=nn.MSELoss()
+    #falg--state switch
+    Flag_train_genertor=0
     #train
     for epoch in range(num_epoch):
         #record time
         start_time=time.time()
         for i,(batch_data,label) in enumerate(train_loader):
 
-            #every iteration：we pick the basis_function and record them
-           gan_nerual.pick_basis_function(config["prior_knowledge"])
-
+           #batch_size[2,100,9]
            num_batch=batch_data.size(0)
-           #label is the csv name
-           dict_str_solu=uf.read_real_str(label)
-           #data_t
-           data_t = batch_data[:,:,6].clone()
-           data_t = data_t.unsqueeze(dim=2) #shape:[batch,100,1]
-           data_t = data_t.to(device).requires_grad_(True)
-           #condition  is the first 6 dimen but we need to tranform
-           #initial condition[batch,1,2]
-           #gradint condition[batch,100,2]
-           #condition=cat initial and gradient=[batch,101,2]
-           condition = batch_data[:,:,0:6].to(device)
-           ini_condi=condition[:,0:1,0:2]
-           #critic for real data : z1_t z2_t
-           real = batch_data[:,:,7:9].to(device).requires_grad_(True) #[batch,100,2]
-           #only for diffentiable
-           real_data4grad=real.detach()
-           real_grads=uf.calculate_diff_grads(real_data4grad,data_t,type="center_diff")
-           real_grads=real_grads.to(device)
 
-           trans_condition=torch.cat((ini_condi,real_grads),dim=1)
-           print("trans_condition",trans_condition.shape)
+           #every iteration：we pick the basis_function and record them
+           left_matrix,symbol_matrix=gan_nerual.Get_basis_function_info(config['prior_knowledge'])
 
-           #omegae_value
-           omega_value=G_omega(trans_condition)
+           #get the condition_data and data_t and dict_str_solu
+           #real_condition[batch,101,2]
+           real_condition,data_t,dict_str_solu=gan_nerual.convert_data(batch_data,label)
 
-           # real out score scalar
-           score_real_out=D(real,real_grads)
+           #real_data
+           real=batch_data[:,:,7:9].to("cuda")
+           real.requires_grad=True
+
+           #omega_value
+           omega_value=G_omega(real_condition)
+
+           # real out score scalar about trans_condition
+           score_real_out=D(real,condition_info=real_condition)
+
            #z-noise sample for fake data
            z=torch.randn(num_batch,z_dimen).to(device)
-           print("noise",z.shape)
-           fake,energy,coeffs,basis_matrix=G(z,trans_condition,omega_value)
 
-           fake_grads=uf.calculate_diff_grads(fake,data_t,type="center_diff")
-           #list for str of function
-           basis_str=gan_nerual.function_symbol
-           print("critic_basis_str****",basis_str)
+           #generate by inference ---linear combination [batch,6]
+           fake_coeffs=G(z,real_condition,omega_value)
+           updated_symbol_list,fake_data,fake_condition,left_matrix=gan_nerual.multiply_matrix(fake_coeffs,
+                                                                               omega_value,
+                                                                               left_matrix,
+                                                                               symbol_matrix)
 
-           #real_trap
-           real_trap=uf.calculate_trapz(data_t,real[:,:,0:1])
-           fake_trap=uf.calculate_trapz(data_t,fake[:,:,1:2])
+           #fake-out score
+           #critic for data and (grads and ini_condition)
+           score_fake_out=D(fake_data,condition_info=fake_condition)
 
-           #fake-out score fake:[batch,100,2]
-           #crtic for data and grads
-           score_fake_out=D(fake,fake_grads)
-           div_gp=gan_nerual.compute_w_div(real,score_real_out,fake,score_fake_out)
+           div_gp=gan_nerual.compute_w_div(real,
+                                           score_real_out,
+                                           fake_data,
+                                           score_fake_out)
            #wasserstein_distance
            wasses_distance=torch.mean(score_real_out)-torch.mean(score_fake_out)
 
@@ -136,125 +127,143 @@ def train(D,G,G_omega,z_dimen,num_epoch=1000):
            d_loss=-(torch.mean(score_real_out)-torch.mean(score_fake_out))+div_gp
            d_loss_list.append(d_loss)
            div_gp_list.append(div_gp)
-           energy_list.append(energy)
            wasses_d_list.append(wasses_distance)
 
-           #dict score
-           dict_score["real_trap"].append(torch.mean(real_trap))
-           dict_score["fake_trap"].append(torch.mean(fake_trap))
-           dict_score["real_out"].append(torch.mean(score_real_out))
-           dict_score["fake_out"].append(torch.mean(score_fake_out))
-
-           # #save fig and visualize
+           # #save fig and visualize fake
            uf.plot_critic_tensor_change(config['save_plot_tb_path'],writer,
-                                        d_loss,data_t,
-                                        fake,real,
-                                        basis_str,basis_matrix,coeffs,dict_str_solu,
-                                        energy)
-
-           #clear the list
-           gan_nerual.clear_str_list()
+                                        data_t,
+                                        fake_data,real,
+                                        updated_symbol_list,
+                                        left_matrix,
+                                        fake_coeffs,
+                                        dict_str_solu,
+                                        )
 
            #optimizer
            d_optimizer.zero_grad()
-           d_loss.backward(retain_graph=True)
+           d_loss.backward()
            d_optimizer.step()
 
-           for j in range(10):
-                #train generator
-                #add some initial condition loss and derivate loss like pinn
-                condition_omega=trans_condition.clone()
-                ini_condi=condition[:,0,0:2].clone() #shape:[batch,100,2]
-                #z -noise
-                z = torch.randn(config["batch_size"], z_dimen).to(device)
-                omega_value = G_omega(condition_omega)
-                #fake data
-                fake,energy,coeffs,basis_matrix=G(z,condition_omega,omega_value)
-                #fake_inital
-                fake_inital=fake[:,0,0:2] #[batch,2]
-                #only for diffentiable no analytical!
-                fake_data4grad=fake.clone().requires_grad_(True)
+           for j in range(100):
 
-                #fake_derive diff grads
-                fake_grads=uf.calculate_diff_grads(fake_data4grad,data_t,type="center_diff")
-                #initail condition loss
-                initail_loss=criterion_ini(fake_inital,ini_condi)
-                ini_loss_list.append(initail_loss)
-                #derivative loss
-                deriva_loss=criterion_deriva(fake_grads,real_grads)
-                deriva_loss_list.append(deriva_loss)
-                #clear
-                gan_nerual.clear_str_list()
+               if Flag_train_genertor == 0:
+                   # pretained the omega_neural
+                   # g_omega_optimizer
+                   real_condition_4omega = real_condition.clone().detach()
+                   real_condition_4omega.require_grad=True
+                   #cal the omega---fake--omegae
+                   omega_value = G_omega(real_condition_4omega)
 
-                #score_fake_out
-                score_fake_out=D(fake,fake_grads)
-                g_loss = -torch.mean(score_fake_out)+config["lamba_ini"]*initail_loss\
-                         +config["lamba_deriva"]*deriva_loss
-                g_loss_list.append(g_loss)
-                # genertor optimizer
-                g_optimizer.zero_grad()
-                g_loss.backward(retain_graph=True)
-                g_optimizer.step()
+                   #compare the fourier domain's difference
+                   real_freq = gan_nerual.compute_spectrum(real)
+                   generator_freq = omega_value
 
-                #g_omega_optimizer
-                generator_freq=uf.calculate_fft(fake,save_main_numbers=1)
-                real_freq=uf.calculate_fft(real,save_main_numbers=1)
-                generator_freq.requires_grad_(True)
-                real_freq.requires_grad_(True)
-                #g_omega_loss
-                g_omega_freq_loss=criterion_freq(generator_freq,real_freq)
-                g_omega_loss=g_omega_freq_loss
-                #optimizer
-                g_omega_optimizer.zero_grad()
-                g_omega_loss.backward()
-                #omega _loss is depending on freq! so we need to calculate the freq
-                g_omega_optimizer.step()
+                   # g_omega_loss
+                   g_omega_freq_loss = criterion_freq(generator_freq, real_freq)
+
+                   g_omega_optimizer.zero_grad()
+                   # optimizer
+                   g_omega_freq_loss.backward()
+
+                   # omega _loss is depending on freq! so we need to calculate the freq
+                   g_omega_optimizer.step()
+
+                   if (g_omega_freq_loss.item ()< config["freq_threshold"]):
+                       Flag_train_genertor = 1
+                       writer.add_scalar('Model_Switch', Flag_train_genertor, epoch)  # switch state
+
+               else:
+
+                   Flag_train_genertor=0
+                   writer.add_scalar('Model_Switch', Flag_train_genertor, epoch)  # switch state
+                   # train the generator
+                   g_optimizer.zero_grad()
+                   real_condition_4omega = real_condition.detach()
+                   real_initial = real_condition_4omega[:, 0, 0:2] # shape:[batch,1,2]
+
+                   # z -noise
+                   z = torch.randn(num_batch, z_dimen).to("cuda")
+
+                   #free the G_omega :freeze
+                   omega_value = G_omega(real_condition_4omega)
+
+                   #fake data
+                   fake_coeffs = G(z, real_condition_4omega, omega_value)
+                   updated_symbol_list, fake_data, fake_condition, basis_matrix = gan_nerual.multiply_matrix(
+                                                                                   fake_coeffs,
+                                                                                   omega_value,
+                                                                                   left_matrix,
+                                                                                   symbol_matrix)
+                   # real_grads
+                   real_grads= uf.calculate_diff_grads(real, data_t)
+
+                   # fake_inital
+                   fake_inital = fake_condition[:, 0, 0:2]  # [batch,2]
+
+                   # fake_grad_condition
+                   fake_grads = fake_condition[:, 1:, 0:2]  # [batch,100,2]
+
+                   # score_fake_out:need to freeze the D
+                   fake_data.detach_()
+                   fake_condition.detach_()
+                   score_fake_out = D(fake_data, fake_condition)
+
+                   # ini_condition loss
+                   ini_loss = criterion_ini(fake_inital, real_initial)
+                   ini_loss_list.append(ini_loss)
+
+                   # derivative loss
+                   deriva_loss = criterion_deriva(fake_grads, real_grads)
+                   deriva_loss_list.append(deriva_loss)
+
+                   #calculate the loss
+                   g_loss = -torch.mean(score_fake_out)+config["lamba_ini"]*ini_loss+\
+                            config["lamba_grad"]*deriva_loss
+                   g_loss_list.append(g_loss)
+                   # generator optimizer
+
+                   g_loss.backward()
+                   g_optimizer.step()
+                   Flag_train_genertor=0
+
 
 
         #save for the avg_epoch_loss
         epoch_d_loss=sum(d_loss_list) / len(d_loss_list)
-        epoch_g_loss = sum(g_loss_list) / (10 * len(g_loss_list))
+        epoch_g_loss = sum(g_loss_list) / (len(g_loss_list))
         print(f"***dloss&gloss***{epoch}",epoch_d_loss,epoch_g_loss)
         writer.add_scalars("all_loss",{"d_loss":epoch_d_loss,
                                        "g_loss":epoch_g_loss,
                                        "all_loss":epoch_d_loss+epoch_g_loss},epoch)
-        writer.add_scalars("train_g_loss",{"ini_loss":sum(ini_loss_list) / (10*len(ini_loss_list)),
-                                    "deriva_loss":sum(deriva_loss_list) / (10*len(ini_loss_list))},epoch)
+        writer.add_scalars("train_g_loss",{"ini_loss":sum(ini_loss_list) / (len(ini_loss_list)),
+                                    "deriva_loss":sum(deriva_loss_list) / (len(ini_loss_list))},epoch)
 
         epoch_div=sum(div_gp_list) / len(div_gp_list)
         writer.add_scalar("div_gp", epoch_div, epoch)
-
-        # stack
-        stacked_energy_tensor = torch.stack(energy_list)
-        # mean
-        mean_energy_tensor = torch.mean(stacked_energy_tensor, dim=(0, 1, 2))
-        writer.add_scalar("generate_energy", mean_energy_tensor, epoch)
 
         wasses_distance=sum(wasses_d_list) / len(wasses_d_list)
         writer.add_scalar("wasses_distance", wasses_distance, epoch)
 
         #save the scalars
-        writer.add_scalars("real_fake_trap",{"real_trap":sum(dict_score["real_trap"]) / len(dict_score["real_trap"]),
-                                        "fake_trap":sum(dict_score["fake_trap"]) / len(dict_score["fake_trap"])}
-                                        ,epoch)
-        writer.add_scalars("critic_score",{"real_out":sum(dict_score["real_out"]) / len(dict_score["real_out"]),
-                                    "fake_out":sum(dict_score["fake_out"]) / len(dict_score["fake_out"])
-                                    },epoch)
 
-        #save the fake and real data
-
-        #embedding batch_data
-        for j in range(config["batch_size"]):
-
-            save_fake_tensors=torch.concatenate((data_t[j,:,0:1],fake[j,:,0:2]),dim=1)
-            writer.add_embedding(save_fake_tensors,
-                                 metadata = [[f"data_t{i}",f"fake_z1_t{i} ", f"fake_z2_t {i}",label[j]] for i in range(100)],
-                                 tag = 'fake_data'+str(j)+"label="+str(label[j]), global_step = epoch)
-
-            save_real_tensors=torch.concatenate((data_t[j,:,0:1],real[j,:,0:2]),dim=1)
-            writer.add_embedding(save_real_tensors,
-                                 metadata=[[f"data_t{i}", f"real_z1_t {i}", f"real_z2_t {i}",label[j]] for i in range(100)],
-                                 tag='real_data'+str(j)+"label="+str(label[j]), global_step=epoch)
+        # writer.add_scalars("critic_score",{"real_out":sum(dict_score["real_out"]) / len(dict_score["real_out"]),
+        #                                    "fake_out":sum(dict_score["fake_out"]) / len(dict_score["fake_out"])
+        #                             },epoch)
+        #
+        # #save the fake and real data
+        #
+        # #embedding batch_data
+        # for j in range(config["batch_size"]):
+        #
+        #     save_fake_tensors=torch.concatenate((data_t[j,:,0:1],fake[j,:,0:2]),dim=1)
+        #     writer.add_embedding(save_fake_tensors,
+        #                          metadata = [[f"data_t{i}",f"fake_z1_t{i} ", f"fake_z2_t {i}",label[j]] for i in range(100)],
+        #                          tag = 'fake_data'+str(j)+"label="+str(label[j]), global_step = epoch)
+        #
+        #     save_real_tensors=torch.concatenate((data_t[j,:,0:1],real[j,:,0:2]),dim=1)
+        #     writer.add_embedding(save_real_tensors,
+        #                          metadata=[[f"data_t{i}", f"real_z1_t {i}", f"real_z2_t {i}",label[j]] for i in range(100)],
+        #                          tag='real_data'+str(j)+"label="+str(label[j]), global_step=epoch)
 
         #check the epoch time
         final_time = time.time()
@@ -350,10 +359,10 @@ if __name__=='__main__':
     print("the prior knowledge is",config["prior_knowledge"],flush=True)
     D=gan_nerual.Discriminator().to(device)
     G=gan_nerual.Generator(config,basis_num=3,omega_value=0).to(device)
-    G_omega=gan_nerual.omega_generator(input_dim=202,output_dim=1).to(device)
-    D = torch.nn.DataParallel(D, device_ids=[0,1])
-    G = torch.nn.DataParallel(G, device_ids=[0,1])
-    G_omega = torch.nn.DataParallel(G_omega, device_ids=[0,1])
+    G_omega=gan_nerual.omega_generator(input_dim=202,output_dim=2).to(device)
+    D = torch.nn.DataParallel(D, device_ids=[0])
+    G = torch.nn.DataParallel(G, device_ids=[0])
+    G_omega = torch.nn.DataParallel(G_omega, device_ids=[0])
     train(D,G,G_omega,z_dimen=config['zdimension_Gap'],num_epoch=1000)
     #eval_model(model_path="../tb_info/wgan_2nd/checkpoint.pth",
                #save_path="../tb_info/wgan_2nd_eval")
