@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="root@172.16.78.10:30454 password (36)" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="root@172.16.78.10:30454 password (59)" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
+      <paths name="root@172.16.78.10:30383 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="root@172.16.78.10:30454 password (10)">
         <serverdata>
           <mappings>
@@ -58,6 +65,27 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="root@172.16.78.10:30454 password (37)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (38)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (39)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="root@172.16.78.10:30454 password (4)">
         <serverdata>
           <mappings>
@@ -65,7 +93,147 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="root@172.16.78.10:30454 password (40)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (41)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (42)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (43)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (44)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (45)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (46)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (47)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (48)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (49)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="root@172.16.78.10:30454 password (5)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (50)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (51)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (52)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (53)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (54)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (55)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (56)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (57)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (58)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30454 password (59)">
         <serverdata>
           <mappings>
             <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
@@ -94,6 +262,13 @@
         </serverdata>
       </paths>
       <paths name="root@172.16.78.10:30454 password (9)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@172.16.78.10:30595 password">
         <serverdata>
           <mappings>
             <mapping deploy="/liangaoming/conda_lam/neural_find_sol" local="$PROJECT_DIR$" />

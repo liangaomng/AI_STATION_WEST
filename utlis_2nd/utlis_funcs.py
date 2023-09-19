@@ -14,6 +14,7 @@ import ode_dataset.fft as please_fft
 import math
 import seaborn as sns
 import matplotlib.patches as patches
+import utlis_2nd.gan_nerual as gan_nerual
 '''
 this file contains all the functions that are used in the main file
 func1:set_seed(seed)
@@ -24,7 +25,7 @@ def set_seed(seed=42):
     '''
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.enabled = True
     np.random.seed(seed)
     random.seed(seed)
 
@@ -75,6 +76,9 @@ count_critic_step = 0
 count_generator_step = 0
 
 
+
+
+
 '''
 func:plot_critic_tensor_change()
 meaning:plot function for critic 
@@ -82,302 +86,211 @@ which means that we plot the batch size data in the same figure
 and basis function' shape
 concludes:fake data and real data  and the real loss 
 '''
+import matplotlib.colors as colors
 def plot_critic_tensor_change(plot_path,writer,
-                              variable_t,
-                              in_fake_data:torch.Tensor,
-                              in_real_data:torch.Tensor,
-                              basis_str,left_matrix:torch.Tensor,coeffs:torch.Tensor,solus_str,
+                              variable_t,wgan_loss,div_fouier,div_gp,crtic_all_loss,
+                              critic_numpy:np.ndarray,
+                              now_epoch,epoch
                             ):
     '''
     :param plot_path: str
     :param writer:tensorboard
     :param variable_t:[batch,100,1]
-    :param in_fake_data:[batch,100,2]
-    :param in_real_data:[batch,100,2]
-    :param basis_str:[batch*2] because 2 z1 and z2
-    :param basis_matrix: [batch,100,basis_num,2]
-    :param coeffs:[batch,6]
-    :param solus_str:a list that concludes batch*{'z1_solu': 'z1=sin(19*t) + cos(19*t)', 'z2_solu': 'z2=-sin(19*t) + cos(19*t)'}
-
+    :param wgan_loss:scalar
+    :param div_dp:scalar
     '''
     #record count_critic_step
     global count_critic_step
     count_critic_step+=1
     #get the batch size
-    batch_size,_,_=in_fake_data.size()
-    basis_num=left_matrix.shape[2]
-    #length of solus_str is batch_size
-    assert len(solus_str)==batch_size
+    wgan_loss=wgan_loss.cpu().detach().numpy()
+    div_gp=div_gp.cpu().detach().numpy()
+    crtic_all_loss=crtic_all_loss.cpu().detach().numpy()
+    div_fouier=div_fouier.cpu().detach().numpy()
 
-    # data process
-    in_fake_data=in_fake_data.cpu().detach()
+    #prepare the plot
 
-    in_real_data=in_real_data.cpu().detach()
-    #in_real_data=in_real_data.reshape(batch_size,100,2)
-    variable_t=variable_t[0,:,0].cpu().detach().numpy() #[100,1]
-    coeffs=coeffs.cpu().detach().numpy() #[batch,basis_num*2] first are z1_t
-
-    basis_matrix=left_matrix.detach()#[batch,100,basis_num,2]
+    #fill
+    critic_numpy[0,now_epoch]=   wgan_loss #
+    critic_numpy[1, now_epoch] = div_gp #
+    critic_numpy[2, now_epoch] = div_fouier #
+    critic_numpy[3,now_epoch] =  crtic_all_loss#
 
     #plot the sub figure
+    plt.figure(figsize=(8, 6))
+    plt.grid(True)
+    #note that the first dimension y axis is z1 and z2
+    norm = colors.SymLogNorm(linthresh=1e-3, linscale=1, vmin=-1e-2, vmax=1e+2)
+    plt.pcolor(critic_numpy, cmap='RdBu', norm=norm)
+    cbar=plt.colorbar()
+    cbar.set_label('symLog Scale')
 
-    plt.figure(figsize=(30, 30))
-    plt.style.use('ggplot')  # fig set
-    #plot layout
-    gs = gridspec.GridSpec(3, 2, width_ratios=[1, 1])
-    ax0 = plt.subplot(gs[0])
-    ax1= plt.subplot(gs[1])
-    ax2= plt.subplot(gs[2])
-    ax3= plt.subplot(gs[3])
-    ax4= plt.subplot(gs[4])
-    ax5= plt.subplot(gs[5])
-    title_size=50
+    plt.xlabel('Epoch', fontsize=22)
+    # Set the y-axis ticks and labels to 1, 2 and rotate the labels
+    y_positions = [0.5, 1.5, 2.5,3.5]
+    y_labels = [r'$wgan_{loss}$', r'$div_{gp}$',r'$div_{fourier}$',r'$critic_{loss}$']
+    plt.axhline(y=1, color='black', linewidth=2)
+    plt.axhline(y=2, color='black', linewidth=2)
+    plt.axhline(y=3, color='black', linewidth=2)
+    plt.yticks(y_positions, y_labels, fontsize=22)
 
-    for j in range(basis_num):
-        #plot the basis data
-        #note because of the multi-gpu training
-        #basis_matrix [batch,100,basis_num,2]
-        ax0.plot(variable_t, basis_matrix[0,:,:,0].cpu().numpy(),linewidth=5,
-                 label=basis_str[0][j])
-        #fft basis_matrix
-        basis_freqs, norm_spec,_ = get_top_frequencies_magnitudes_phases(basis_matrix[0:100,j],top_k=50,device="cpu")
-        ax1.scatter(basis_freqs.numpy(),norm_spec.numpy(),s=1000-100*j,alpha=0.5,marker='*',
-                    label=basis_str[0][j])
-        #label the max
-        max_index=torch.argmax(norm_spec)
-        ax1.vlines(basis_freqs[max_index],0,norm_spec[max_index],colors='r',linestyles='dashed',linewidth=5)
+    # axis
+    ax = plt.gca()
 
+    #spines
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(2)  # 可以调整线的宽度
 
-    #plot the coeffs -violin
-    z1_t_columns = [f'z1 coef {i + 1}' for i in range(basis_num)]
-    z2_t_columns = [f'z2 coef {i + 1}' for i in range(basis_num)]
-    #concat list
-    group_list= z1_t_columns + z2_t_columns
-    df = pd.DataFrame(coeffs, columns=group_list)
-    # data process
-    df_melted = df.melt(value_name="Values", var_name="Groups")
-    sns.violinplot(x="Groups", y="Values", data=df_melted,
-                   ax=ax2,width=1.2,linewidth=2)
+    # Set the y-axis tick parameters to hide the tick marks and set the tick label size
+    plt.gca().yaxis.set_tick_params(size=0)
+    plt.gca().tick_params(axis='y', labelsize=22)
+    plt.gca().tick_params(axis='x', labelsize=22)
 
-    ax0.set_title("basis function",fontsize=title_size)
-    ax1.set_title("basis function fft",fontsize=title_size)
-    ax2.set_title("coeffs",fontsize=title_size)
-    #
-    ax0.tick_params(labelsize=title_size/2)
-    ax1.tick_params( labelsize=title_size/2)
-    ax2.tick_params( labelsize=title_size/2)
+    plt.title('critic dynamic response', fontsize=22)
+    plt.tight_layout()
 
-    ax0.legend(fontsize=title_size/2)
-    ax1.legend(fontsize=title_size/2)
+    plt.savefig(plot_path + "/critic_loss.png")
 
-    for i in range(1):
-        ax3.plot(variable_t, in_fake_data[i,:,0].numpy(),color='b',linestyle='--',
-                 linewidth=2,label='z1fake_data_critic'+str(i))
-        ax3.plot(variable_t, in_real_data[i,:,0].numpy(),color='k',
-                 linewidth=2,label='z1real_data'+str(i))
-        ax3.plot(variable_t, in_fake_data[i,:,1].numpy(),color='g',linestyle='--',
-                 linewidth=2,label='z2fake_data_critic'+str(i))
-        ax3.plot(variable_t, in_real_data[i,:,1].numpy(),color='r',
-                 linewidth=2,label='z2real_data'+str(i))
+    plt.close()
 
-        # fft data
-        basis_freqs, basis_norm_spec,_ = get_top_frequencies_magnitudes_phases(in_fake_data[i, :, 0], top_k=50, device="cpu")
+def plot_generator_tensor_change(plot_path,writer,
+                              variable_t,gradient_loss,ini_loss,score_fake_out,generator_all_loss,
+                              generator_numpy:np.ndarray,
+                              now_epoch,epoch):
 
-        ax4.scatter(basis_freqs.numpy(), basis_norm_spec.numpy(), s=1000 - 100 * i, alpha=0.5,
-                    marker='*',
-                    label='z1_fake'+str(i)
-                    )
-        # label the fake-max
-        max_index = torch.argmax(basis_norm_spec)
-        ax4.vlines(basis_freqs[max_index], 0, basis_norm_spec[max_index], colors='b',
-                   linestyles='-.', linewidth=5,alpha=0.5)
+    #record count_critic_step
+    global count_critic_step
+    count_critic_step+=1
+    #get the batch size
+    gradient_loss=gradient_loss.cpu().detach().numpy()
+    ini_loss=ini_loss.cpu().detach().numpy()
+    score_fake_out=score_fake_out.cpu().detach().numpy()
+    generator_loss=generator_all_loss.cpu().detach().numpy()
 
-        # fft data
-        basis_freqs, basis_norm_spec,_ = get_top_frequencies_magnitudes_phases(in_real_data[i, :, 0], top_k=50, device="cpu")
+    #prepare the plot
+    #fill
+    generator_numpy[0,now_epoch]=   gradient_loss #
+    generator_numpy[1, now_epoch] = ini_loss #
+    generator_numpy[2,now_epoch] =  score_fake_out#
+    generator_numpy[3,now_epoch] =  generator_all_loss#
+    #plot the sub figure
+    plt.figure(figsize=(8, 6))
+    #note that the first dimension y axis is z1 and z2
+    norm = colors.SymLogNorm(linthresh=1e-3, linscale=1, vmin=-1e-2, vmax=1e+2)
+    plt.pcolor(generator_numpy, cmap='RdBu',norm=norm)
+    cbar=plt.colorbar()
+    cbar.set_label('Log Scale')
 
-        # label the real-max
-        max_index = torch.argmax(basis_norm_spec)
-        ax4.vlines(basis_freqs[max_index], 0, basis_norm_spec[max_index], colors='g',
-                   linestyles='--',
-                   linewidth=7,alpha=0.5)
+    plt.xlabel('Epoch', fontsize=22)
+    # Set the y-axis ticks and labels to 1, 2 and rotate the labels
+    y_positions = [0.5, 1.5, 2.5,3.5]
+    y_labels = [r'$gradient_{loss}$', r'$ini_{loss}$',r'$score_{fake}$',r'$generator_{loss}$']
+    plt.axhline(y=1, color='black', linewidth=2)
+    plt.axhline(y=2, color='black', linewidth=2)
+    plt.axhline(y=3, color='black', linewidth=2)
+    plt.yticks(y_positions, y_labels, fontsize=22)
+    # axis
+    ax = plt.gca()
 
-        ax4.scatter(basis_freqs.numpy(), basis_norm_spec.numpy(), s=1000 - 10 * i, alpha=0.5,
-                    marker='*',
-                    label='z1_real'+str(i))
+    # spines
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(2)  # 可以调整线的宽度
 
+    # Set the y-axis tick parameters to hide the tick marks and set the tick label size
+    plt.gca().yaxis.set_tick_params(size=0)
+    plt.gca().tick_params(axis='y', labelsize=22)
+    plt.gca().tick_params(axis='x', labelsize=22)
 
-        #phase portrait
-        ax5.plot(in_fake_data[i,:,0].numpy(),in_fake_data[i,:,1].numpy(),color='b',linestyle='--',
-                    linewidth=2,label='fake_phase_z1'+str(i))
-        ax5.plot(in_real_data[i,:,0].numpy(),in_real_data[i,:,1].numpy(),color='k', linewidth=2,
-                    label='real_phase_z1'+str(i))
-        fake_z1_t=in_fake_data[i,:,0]
-        fake_z2_t=in_fake_data[i,:,1]
-        #quiver
-        u = [x - y for x, y in zip(fake_z1_t[1:].numpy(), fake_z1_t[:-1].numpy())]
-        v = [x - y for x, y in zip(fake_z2_t[1:].numpy(), fake_z2_t[:-1].numpy())]
-        ax5.quiver(fake_z1_t[1:],fake_z2_t[1:],
-                    u,v,
-                  scale_units='xy', angles='xy', scale=0.3,color='r')
-        real_z1_t=in_real_data[i,:,0]
-        real_z2_t=in_real_data[i,:,1]
-        u = [x - y for x, y in zip(real_z1_t[1:], real_z1_t[:-1])]
-        v = [x - y for x, y in zip(real_z2_t[1:], real_z2_t[:-1])]
-        ax5.quiver(real_z1_t[1:],real_z2_t[1:],
-                    u,v,
-                    scale_units='xy', angles='xy', scale=0.3,color='g')
-
-    ax3.set_title("real and fake data",fontsize=title_size)
-    ax3.tick_params(labelsize=title_size/2)
-    ax3.legend(ncol=12,fontsize=title_size/6)
-
-    ax4.set_title("real and fake data fft",fontsize=title_size)
-    ax4.tick_params(labelsize=title_size/2)
-    ax4.legend(ncol=10,fontsize=title_size/4)
-
-    ax5.set_title("phase portrait",fontsize=title_size)
-    ax5.tick_params(labelsize=title_size/2)
-    ax5.legend(ncol=10,fontsize=title_size/4)
+    plt.title("genertor dynamic response", fontsize=22)
 
     plt.tight_layout()
-    path_analyze = plot_path + "/analyze_critic " + str(count_critic_step) + ".png"
-    plt.savefig(path_analyze)
-    plt.close()
-    #
-    # #--------------ridar
-    #list basis_str to str
-    #now is proper multiplication the basis form like : a1*basis +a2*basis
-    #label for all the batch data
-    # set figure
-    fig, ax = plt.subplots(batch_size,1,figsize=(30, 30),
-                           subplot_kw={'projection': 'polar'})
-    plt.style.use('ggplot')
-
-    batch_fake_symbolic={"z1_fake_symbolic_str":[],"z2_fake_symbolic_str":[]}
-    batch_real_symbolic={"z1_real_symbolic_str":[],"z2_real_symbolic_str":[]}
-
-    for i in range(batch_size):
-        #pick the batch data
-        ax[i].patch.set_edgecolor('black')
-        ax[i].patch.set_linewidth(3)
-
-        z1_t_coeff= coeffs[i,0:basis_num]
-        z2_t_coeff= coeffs[i,basis_num:]
-
-        #ridar basis structure:we just write the first batch data
-        fake_labels = basis_str[0]
-        print("label_len",len(fake_labels))
-
-        #fake data zip for the basis and coeff
-        batch_fake_symbolic['z1_fake_symbolic_str'] = ' + '.join(f'{s}*{c}' for s, c in zip(z1_t_coeff, fake_labels))
-        batch_fake_symbolic['z2_fake_symbolic_str'] = ' + '.join(f'{s}*{c}' for s, c in zip(z2_t_coeff, fake_labels))
-
-        #real data zip for the basis and coeffs
-        batch_real_symbolic['z1_real_symbolic_str'] =  solus_str[i]['z1_solu']
-        batch_real_symbolic['z2_real_symbolic_str'] =  solus_str[i]['z2_solu']
-
-        print("batch_real_symbolic",batch_real_symbolic)
-
-
-        #fake and real data in j is the batch
-        # symlog
-        ax[i].set_rscale('symlog', linthresh=1e-4)
-        # polar
-        ax[i].plot(np.radians(np.linspace(0, 360, len(fake_labels),
-                                endpoint=False)),
-                z1_t_coeff, marker='*',label='z1_fake__symbolic_str:'+ batch_fake_symbolic['z1_fake_symbolic_str'] )
-
-        ax[i].plot(np.radians(np.linspace(0, 360, len(fake_labels),
-                                endpoint=False)),
-                z2_t_coeff, marker='*',label='z2_fake__symbolic_str:'+ batch_fake_symbolic['z2_fake_symbolic_str'] )
-        # set tick
-        ax[i].tick_params(axis='both', labelsize=6)
-        ax[i].legend(fontsize=20,loc ='upper right')
-        # set labels
-        ax[i].set_xticks(np.radians(np.linspace(0, 360, len(fake_labels),
-                                       endpoint=False)))
-        ax[i].set_xticklabels(basis_str[0], fontsize=12, color='black')
-        # spine
-        ax[i].spines['polar'].set_visible(True)
-        ax[i].spines['polar'].set_color('black')
-        ax[i].spines['polar'].set_linewidth(1)
-        # grid
-        #title
-        ax[i].set_title("fake data_compare_real_symbol:"+f"{batch_real_symbolic['z1_real_symbolic_str']}"+"_"\
-                           +f"{batch_real_symbolic['z2_real_symbolic_str']}"
-                           ,fontsize=title_size/2)
-
-
-    path_ridar= plot_path + "/ridar_critic " + str(count_critic_step) + ".png"
-    plt.savefig(path_ridar)
+    plt.savefig(plot_path + "/generator_loss.png")
     plt.close()
 
-    #save the ridar image to tensorboard
-    image_ridar = Image.open(path_ridar)
-    image_ridar_tensor = ToTensor()(image_ridar)
-    writer.add_image('image_ridar', image_ridar_tensor,global_step=count_critic_step)
-    #save analyze image to tensorboard
-    image_analyze = Image.open(path_analyze)
-    image_analyze_tensor = ToTensor()(image_analyze)
-    writer.add_image('image_analyze', image_analyze_tensor,global_step=count_critic_step)
+def plot_freq_4_data_soft_argmax(plot_path,labels,data,name):
+    '''
+    in this function we plot the first batch data,note:we have reduced the average
+    :param plot_path: str
+    :param labels: str like "fake "
+    :param data: tensor,[batch,100,2]
+    :param fake_freq: tensor,[batch,2] because z1 and z2
+    ：param name: str “/data1.png”
+    '''
+    data_t=np.linspace(0,2,100)
+    #get the first batch data
+    real_data=data[:,:,:]  #[batch,100,2]
+    #average the data
+    average_data=torch.mean(real_data,dim=1) #[1,2]
+    real_data=real_data-average_data.unsqueeze(1)
+    varible_num=data.shape[2]
+    #get the real freq
+    #please help me to plot the real and fake freq
+    #plot the real freq and fake freq
+    plt.figure(figsize=(20, 6))
+    plt.grid(True)
+    color = ['red', 'blue']
+    line=['ro','bo']
+
+    #real data
+    plt.subplot(1, 3, 1)
+    plt.grid(True)
+    for i in range(varible_num):
+        real=data[0,:,i].cpu().detach().numpy()
+        plt.plot(data_t,real,label=labels+"_"+rf"$\mathbf {{Z_{i+1}}}$",color=color[i])
+    plt.legend(loc='upper right')
+    plt.title('Time Domain Signal')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    plt.title(labels+" time domain")
+
+    #real freq
+    plt.subplot(1, 3, 2)
+    plt.grid(True)
+    fs = 50#sampling frequency
+    beta=1
+    soft_argfreq=gan_nerual.compute_spectrum(real_data,beta) #return [1,2]
+    soft_argfreq=soft_argfreq[0:1,:]/(2*torch.pi)
+    resolution = 0.5
+    #plot
+    for i in range(varible_num):
+        signal=real_data[0,:,i]
+        fft_values = torch.fft.rfft(signal).abs() #[51]
+        arr = np.linspace(0, fs*resolution, fs+1)  # 使用step=0.5
+        lines=plt.stem(arr, fft_values.cpu().detach().numpy(),
+                 label="Z_"+str(i+1),linefmt=line[i],use_line_collection=True)
+
+        plt.setp(lines, color=color[i], alpha=0.7)
+        plt.axvline(soft_argfreq[0,i].cpu().detach().numpy(), alpha=0.7,
+                    color=color[i], linestyle='--',linewidth=3,
+                    label='Soft_argmax with'+r"$T_"+str(beta)+"}$"+" for "\
+                          +r"$ \mathbf {Z_"+str(i+1)+"}$")
 
 
-'''
-func:plot_generator_tensor_change()
-meaning:plot function for genertors 
-which means that we plot the batch size data in the same figure
-concludes:fake data and real data  and the real loss  
-+conditional_data (freqs numbers and size)
-未来想看随时间画的基的变化哈
-'''
-def plot_generator_tensor_change(train_init,writer,loss,variable_t,
-                                 in_fake_data:torch.Tensor,
-                                 in_real_data:torch.Tensor,
-                                 conditional_data:torch.Tensor):
-    global count_generator_step
-    count_generator_step+=1
-    batch_size=in_fake_data.shape[0]
+    plt.title('Magnitude of FFT')
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Amplitude')
+    plt.legend(loc='upper right')
+    plt.title('Frequency Domain')
+
+    plt.subplot(1, 3, 3)
+    plt.grid(True)
+    data_t = torch.from_numpy(data_t)
+    data_t=data_t.reshape(1,100,1)
+    diff_grads=calculate_diff_grads(real_data,data_t,type="center_diff",plt_show=True)
 
 
-    #data process
-    in_fake_data = in_fake_data.cpu().detach().numpy()
-    in_fake_data = in_fake_data.reshape(batch_size, 100)
-    in_real_data = in_real_data.cpu().detach().numpy()
-    in_real_data = in_real_data.reshape(batch_size, 100)
-    variable_t = variable_t.cpu().detach().numpy()
+    plt.tight_layout()
+    plt.savefig(plot_path + name)
+
+    plt.show()
+    plt.close()
+    return diff_grads
 
 
-    plt.figure(figsize=(30, 20))
-    plt.style.use('ggplot')  # fig style
-
-    loss = loss.item()
-    variable_t = variable_t.reshape(batch_size, 100)
-    # plot
-    for _ in range(batch_size):
-
-        plt.scatter(x=variable_t[0, :], y=in_fake_data[_, :] ,
-                    c='r',
-                    label='t-fake_data_'+\
-                          'y='+str(train_init.generator.print_coeff()[_,0].item())+"*"+str(train_init.generator.math_matrix[1])\
-                           +str(train_init.generator.print_coeff()[_,1].item())+"*"+str(train_init.generator.math_matrix[2]),
-                    marker="*",
-                   )
-
-        plt.scatter(x=variable_t[0, :], y=in_real_data[_, :],
-                    c='b',label='t-real_data_'+'y',
-                    marker="o",
-                   )
-    # legnd
-    plt.legend(loc='upper left', bbox_to_anchor=None)
-    # title is generator_loss
-    path=train_init.save_path+"/generator "+str(count_generator_step)+".png"
-    plt.title("generator_loss:"+str(loss))
-    plt.savefig(path)
-    plt.close()  # 清除窗口
-    image = Image.open(path)
-    image_tensor = ToTensor()(image)
-
-    writer.add_image('generartor_Image', image_tensor,global_step=count_generator_step)
+def plot_conditions_4_real_fake(plot_path,real_condition,fake_condition):
+    pass
 
 '''
 func:images_to_video()
@@ -520,7 +433,7 @@ def read_real_str(label:torch.tensor):
     real_str_list=[]
     for i in range(len(label)):
         #read the data colunmn=1
-        value=pd.read_csv("../ode_dataset/easy_center/data"+str(label[i].item())+".csv",nrows=1)
+        value=pd.read_csv("../ode_dataset/complex_center_dataset/data"+str(label[i].item())+".csv",nrows=1)
         z1_solu=value['sol_z1'].values
         z2_solu=value['sol_z2'].values
 
@@ -535,31 +448,109 @@ def read_real_str(label:torch.tensor):
     return real_str_list
 
 
+def five_point_stencil(data,dt):
+    #
+    h=dt
+    central_diff = (-data[:, 4:, :] + 8 * data[:, 3:-1, :] - 8 * data[:, 1:-3, :] + data[:, :-4, :]) \
+                   / (12*h)
+
+    start_diff_1 = (-3 * data[:, 0, :] + 4 * data[:, 1, :] - data[:, 2, :]) / (2*h)
+    start_diff_2 = (-3 * data[:, 1, :] + 4 * data[:, 2, :] - data[:, 3, :]) / (2*h)
+
+    end_diff_1 = (3 * data[:, -2, :] - 4 * data[:, -3, :] + data[:, -4, :]) / (2*h)
+    end_diff_2 = (3 * data[:, -1, :] - 4 * data[:, -2, :] + data[:, -3, :]) / (2*h)
+
+
+    # combine and return [batch,100,2]
+    result = torch.cat([start_diff_1.unsqueeze(1),
+                        start_diff_2.unsqueeze(1),
+                        central_diff,
+                        end_diff_1.unsqueeze(1),
+                        end_diff_2.unsqueeze(1)], dim=1)
+
+    return result
+
+def chebyshev_appro(real_data,deg=10):
+
+    batch_size, sequence_length, feature_dim = real_data.shape
+    derivative = torch.zeros_like(real_data)
+    for i in range(batch_size):
+        for j in range(feature_dim):
+            sequence = real_data[i, :, j].cpu().numpy()
+
+            # Fit the sequence using Chebyshev polynomial
+            coeffs = np.polynomial.chebyshev.chebfit(np.linspace(-1, 1, sequence_length), sequence, deg)
+
+            # Differentiate the Chebyshev polynomial
+            deriv_coeffs = np.polynomial.chebyshev.chebder(coeffs)
+
+            # Evaluate the derivative polynomial
+            deriv_sequence = np.polynomial.chebyshev.chebval(np.linspace(-1, 1, sequence_length), deriv_coeffs)
+
+            # Store the result in the derivative tensor
+            derivative[i, :, j] = torch.tensor(deriv_sequence)
+
+    return derivative
+
+
 '''
 func:calcualte the diff of the data
 input:real_data:torch.tensor and type
 output:diff_grads:torch.tensor
 '''
-def calculate_diff_grads(real_data:torch.tensor,data_t:torch.tensor,type="center_diff")->torch.tensor:
-    #real_data [batch,100,2]
-    #data_t [batch,100,1]
+def calculate_diff_grads(real_data:torch.tensor,data_t:torch.tensor,
+                         type="center_diff",plt_show=False):
+    '''
 
-    delta_t=data_t[:,1,0]-data_t[:,0,0]
-    derivatives=0
+    :param real_data: [batch,100,2]
+    :param data_t:     #data_t [batch,100,1]
+    :param type: center_diff or chebyshev_appro
+    :return:  grads:[batch,100,2],and figure
+    '''
+    delta_t=data_t[0,1,0]-data_t[0,0,0]
 
     if type=="center_diff":
+        #diff_grads
+        diff_grads=five_point_stencil(real_data,delta_t)
+        if plt_show:
+            plt.grid(True)
+            plt.plot(data_t[0,:,0].cpu().detach().numpy(),real_data[0,:,0:1].cpu().detach().numpy(),
+                     label="real_"+r"$\mathbf{z_{1}} $",color="red")
+            plt.plot(data_t[0,:,0].cpu().detach().numpy(),real_data[0,:,1:2].cpu().detach().numpy(),
+                     label="real_"+r"$\mathbf{z_{2}}$",color="blue")
 
-        central_diff = (real_data[:, 2:, :] - real_data[:, :-2, :]) / (2 * delta_t)
-        start_diff = (real_data[:, 1, :] - real_data[:, 0, :]) / delta_t
-        end_diff = (real_data[:, -1, :] - real_data[:, -2, :]) / delta_t
-        # cat the start and end
-        derivatives = torch.cat([start_diff.unsqueeze(1), central_diff, end_diff.unsqueeze(1)], dim=1)
+            plt.plot(data_t[0,:,0].cpu().detach().numpy(),diff_grads[0,:,0:1].cpu().detach().numpy(),
+                     label="real_grad_"+r"$\mathbf {\dot{z_{1}}} $",color="red",linestyle="--")
+            plt.plot(data_t[0,:,0].cpu().detach().numpy(),diff_grads[0,:,1:2].cpu().detach().numpy(),
+                        label="real_grad_"+r"$\mathbf {\dot{z_{2}}} $",color="blue",linestyle="--")
 
-    elif type=="chebyshev_diff":
-        pass
+            plt.title("Center_diff For Gradients")
+            plt.legend(loc='upper right')
+            plt.xlabel("time (s)")
+            plt.ylabel("value")
 
 
-    return derivatives
+    elif type=="chebyshev_appro":
+            diff_grads=chebyshev_appro(real_data,deg=10)
+            if plt_show:
+                plt.grid(True)
+                plt.plot(data_t[0, :, 0].cpu().detach().numpy(), real_data[0, :, 0:1].cpu().detach().numpy(),
+                        label="real_" + r"$\mathbf z_{1} $", color="blue")
+                plt.plot(data_t[0, :, 0].cpu().detach().numpy(), real_data[0, :, 1:2].cpu().detach().numpy(),
+                        label="real_" + r"$\mathbf z_{2}  $", color="red")
+
+                plt.plot(data_t[0, :, 0].cpu().detach().numpy(), diff_grads[0, :, 0:1].cpu().detach().numpy(),
+                        label="real_grad_" + r"$\mathbf {\dot{z_{1}}} $", color="red", linestyle="--")
+                plt.plot(data_t[0, :, 0].cpu().detach().numpy(), diff_grads[0, :, 1:2].cpu().detach().numpy(),
+                        label="real_grad_" + r"$\mathbf {\dot{z_{2}}} $", color="blue", linestyle="--")
+                plt.title("Chebyshev For Gradients")
+                plt.legend(loc='upper right')
+                plt.xlabel("time (s)")
+                plt.ylabel("value")
+
+
+
+    return diff_grads
 
 
 
@@ -584,6 +575,116 @@ def calculate_fft(data,save_main_numbers=1):
         fft_result[i,:,1]=z2_top
 
     return fft_result
+def compute_w_div_fouier_space(real,fake):
+    '''
+    computer the fouier space l2 distance
+    :param real: [batch,100,2]
+    :param fake: [batch,100,2]
+    :return: [batch,scalar]
+    '''
+    #reduce the average
+    reduce_average_1=torch.mean(real,dim=1)
+
+
+    reduce_average_2=torch.mean(fake,dim=1)
+
+    fft1 = gan_nerual.compute_spectrum(real-reduce_average_1.unsqueeze(1))
+    fft2 = gan_nerual.compute_spectrum(fake-reduce_average_2.unsqueeze(1))
+
+    # Compute the difference between the Fourier coefficients
+    diff = fft1 - fft2
+    # Compute the L2 norm of the difference
+    distance= torch.nn.MSELoss()(fft1,fft2)
+
+
+
+    return distance
+
+
+def theil_u_statistic(y_true, y_pred):
+    """
+    Calculate Theil's U-statistic for predictions.
+
+    Parameters:
+    - y_true: Tensor of true values. Shape: (batch_size, sequence_length, 1)
+    - y_pred: Tensor of predicted values. Same shape as y_true.
+
+    Returns:
+    - Theil's U-statistic.[0-1] 0 is perfect
+    """
+    # Calculate numerator (RMSE)
+    numerator = torch.sqrt(torch.mean((y_true - y_pred) ** 2))
+
+    # Calculate the denominators
+    denominator_1 = torch.sqrt(torch.mean(y_true ** 2))
+    denominator_2 = torch.sqrt(torch.mean(y_pred ** 2))
+
+    # Calculate U-statistic
+    u_statistic = numerator / (denominator_1 + denominator_2)
+
+    return u_statistic
+import ot
+import matplotlib.colors as mcolors
+def cost_matrix(real,fake,sampling_hz=49.5):
+    '''
+    :param real: [batch,100,2]
+    :param fake: [batch,100,2]
+    :return: [batch,50,50,2]
+    '''
+    batch_size,_,vari=real.size()
+    M = np.zeros((batch_size,50,50,2))
+    real_fft_result = torch.fft.rfft(real, dim=1)
+    fake_fft_result = torch.fft.rfft(fake, dim=1)
+
+    P_real_freqs = np.fft.rfftfreq(100, d=1 / sampling_hz)[:]
+    P_fake_freqs = np.fft.rfftfreq(100, d=1 / sampling_hz)[:]
+
+    index=np.where(P_real_freqs>0)
+
+    real_spectrum = real_fft_result[:,index[0],:].cpu().detach().numpy()
+    real_frequencies = P_real_freqs[index[0]]
+    fake_spectrum = fake_fft_result[:,index[0],:].cpu().detach().numpy()#[batch,50,2
+    fake_frequencies = P_fake_freqs[index[0]]
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    label_size=20
+    title_size=20
+    plt.hist(real_frequencies, bins=50, weights=np.abs(real_spectrum[0,:,0]), alpha=0.6, label='Original Spectrum', color="g")
+    plt.hist(fake_frequencies, bins=50, weights=np.abs(fake_spectrum[0,:,1]), alpha=0.6, label='Target Spectrum', color="b")
+    plt.xlabel("Frequency (Hz)", fontsize=label_size)
+    plt.ylabel("Magnitude", fontsize=label_size)
+    plt.legend()
+    plt.grid("True")
+    plt.title("Frequency Components Histogram", fontsize=title_size)
+
+    #cost matrix
+    for i in range(batch_size):
+        for j in range(vari):
+            value= ot.utils.dist(np.abs(real_spectrum[i,:,j]).reshape(-1,1), np.abs(fake_spectrum[i,:,j]).reshape(-1,1))
+            M[i,:,:,j]=value
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(M[0,:,:,0], cmap='viridis',norm=mcolors.LogNorm())
+    plt.grid("True")
+    plt.colorbar()
+    plt.title("Cost Matrix Heatmap", fontsize=title_size)
+    plt.xlabel("Original Frequencies", fontsize=label_size)
+    plt.ylabel("Target Frequencies", fontsize=label_size)
+    plt.show()
+    plt.tight_layout()
+    return M
+def infinity_norm(matrix):
+    '''
+    :param matrix: [50,50,2]
+    :return: scalar
+    '''
+    #[2]
+    inf_norm = [np.linalg.norm(matrix[:,:,i], ord=np.inf, axis=1) for i in range(2)]
+    result = [np.max(inf_norm[i]) for i in range(2)] #two elements like[1.2,3.4]
+    average_inf_norm = np.mean(result, axis=0)
+    return average_inf_norm
+
 
 
 

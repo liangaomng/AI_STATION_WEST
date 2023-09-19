@@ -15,25 +15,86 @@ import matplotlib.pyplot as plt
 function_symbol=[]
 
 
-def clear_str_list():
+class SineLayer(nn.Module):
+    # See paper sec. 3.2, final paragraph, and supplement Sec. 1.5 for discussion of omega_0.
 
-    global function_symbol
-    function_symbol=[]
-# 自定义层
+    # If is_first=True, omega_0 is a frequency factor which simply multiplies the activations before the
+    # nonlinearity. Different signals may require different omega_0 in the first layer - this is a
+    # hyperparameter.
 
-class omega_generator(nn.Module):
-    def __init__(self,input_dim=202,output_dim=2):
-        super(omega_generator, self).__init__()
-        self.rational_function_1=Rational()
-        self.rational_function_2=Rational()
+    # If is_first=False, then the weights will be divided by omega_0 so as to keep the magnitude of
+    # activations constant, but boost gradients to the weight matrix (see supplement Sec. 1.5)
 
-        self.omega_fc1=nn.Sequential(
-            nn.Linear(input_dim,254),
-            self.rational_function_1,
-            nn.Linear(254,128),
-            self.rational_function_2,
-            nn.Linear(128,output_dim),
-        )
+    def __init__(self, in_features, out_features, bias=True,
+                 is_first=False, omega_0=30):
+        super().__init__()
+        self.omega_0 = omega_0
+        self.is_first = is_first
+
+        self.in_features = in_features
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+        self.init_weights()
+
+    def init_weights(self):
+        with torch.no_grad():
+            if self.is_first:
+                self.linear.weight.uniform_(-1 / self.in_features,
+                                            1 / self.in_features)
+            else:
+                self.linear.weight.uniform_(-np.sqrt(6 / self.in_features) / self.omega_0,
+                                            np.sqrt(6 / self.in_features) / self.omega_0)
+
+    def forward(self, input):
+        return torch.sin(self.omega_0 * self.linear(input))
+
+    def forward_with_intermediate(self, input):
+        # For visualization of activation distributions
+        intermediate = self.omega_0 * self.linear(input)
+        return torch.sin(intermediate), intermediate
+
+
+class Siren(nn.Module):
+    def __init__(self, in_features, hidden_features, hidden_layers, out_features, outermost_linear=False,
+                 first_omega_0=30, hidden_omega_0=30):
+        super().__init__()
+
+        self.net = []
+        self.net.append(SineLayer(in_features, hidden_features,
+                                  is_first=True, omega_0=first_omega_0))
+
+        for i in range(hidden_layers):
+            self.net.append(SineLayer(hidden_features, hidden_features,
+                                      is_first=False, omega_0=hidden_omega_0))
+
+        if outermost_linear:
+            final_linear = nn.Linear(hidden_features, out_features)
+
+            with torch.no_grad():
+                final_linear.weight.uniform_(-np.sqrt(6 / hidden_features) / hidden_omega_0,
+                                             np.sqrt(6 / hidden_features) / hidden_omega_0)
+
+            self.net.append(final_linear)
+        else:
+            self.net.append(SineLayer(hidden_features, out_features,
+                                      is_first=False, omega_0=hidden_omega_0))
+
+        self.net = nn.Sequential(*self.net)
+
+    def forward(self, coords):
+        coords = coords.clone().detach().requires_grad_(True)  # allows to take derivative w.r.t. input
+        output = self.net(coords)
+        return output
+
+
+class unsupervised_omega_generator(nn.Module):
+    def   __init__(self,input_dim=202,output_dim=2):
+        super(unsupervised_omega_generator, self).__init__()
+
+        self.siren1=Siren(in_features=202, hidden_features=512, hidden_layers=3, out_features=2,
+                          outermost_linear=True,
+                         first_omega_0=30, hidden_omega_0=30)
+
         # kaiming_init
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -45,6 +106,43 @@ class omega_generator(nn.Module):
         :return: [batch,1]
         '''
         x=x.view(-1,202)
+        self.omega=self.siren1(x)
+        #discrete
+        #self.omega=RoundWithPrecisionSTE.apply(self.omega,1)
+
+        return self.omega
+
+
+class omega_generator(nn.Module):
+    def __init__(self,input_dim=400,output_dim=2):
+        super(omega_generator, self).__init__()
+        self.rational_function_1=Rational()
+        self.rational_function_2=Rational()
+
+        self.siren1=Siren(in_features=input_dim, hidden_features=512, hidden_layers=3, out_features=output_dim,
+                          outermost_linear=True,
+                         first_omega_0=30, hidden_omega_0=30)
+
+        self.omega_fc1=nn.Sequential(
+            nn.Linear(input_dim,512),
+            nn.BatchNorm1d(512),
+            self.rational_function_1,
+            nn.Linear(512,256),
+            nn.BatchNorm1d(256),
+            self.rational_function_2,
+            nn.Linear(256,output_dim),
+        )
+        # kaiming_init
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+
+    def forward(self,x):
+        '''
+        :param x: [batch,200,2] ini &gradinets 100*2
+        :return: [batch,1]
+        '''
+        x=x.view(-1,400)
         self.omega=self.omega_fc1(x)
         #discrete
         #self.omega=RoundWithPrecisionSTE.apply(self.omega,1)
@@ -81,58 +179,48 @@ class Rational(torch.nn.Module):
         output = torch.div(PQ[..., 0], PQ[..., 1])
         return output
 
-
 class Generator(nn.Module):
     '''
     Generator has two neural networks
     '''
-    def __init__(self,config:dict,basis_num,omega_value):
+    def __init__(self,input_dim=400,output_dim=2):
 
         super(Generator, self).__init__()
-        hidden_width=config["g_neural_network_width"]
+        hidden_width=512
         self.rational_function_1=Rational()
         self.rational_function_2=Rational()
         #structure of model_coeff
         self.model_coeff = nn.Sequential(
-            nn.Linear(config["zdimension_Gap"]+10, hidden_width),
+            nn.Linear(input_dim, hidden_width),
+            nn.BatchNorm1d(hidden_width),
             self.rational_function_1,
-            nn.Linear(hidden_width, hidden_width),
+            nn.Linear(hidden_width, 256),
+            nn.BatchNorm1d(256),
             self.rational_function_2,
-            nn.Linear(hidden_width, basis_num*2), #2 is the z1 and z2
+            nn.Linear(256, output_dim), #2 is the z1 and z2 in 9.12 we add phase1
+            #z1=c0+c1*sin（C2t+C3），z2=c4+c5*sin（C6t+C7）
 
         )
-        self.rational_function_3 = Rational()
-        self.rational_function_4 = Rational()
-        #condition of embedding
-        self.cond_fc1=nn.Sequential(
-            nn.Linear(202,254),
-            self.rational_function_3,
-            nn.Linear(254,128),
-            self.rational_function_4,
-            nn.Linear(128,10),
+        self.siren2 = Siren(in_features=input_dim,
+                            hidden_features=512, hidden_layers=3, out_features=output_dim,
+                            outermost_linear=True,
+                            first_omega_0=30, hidden_omega_0=30)
 
-        )
         # kaiming_init
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
         #self.fake_data=torch.zeros(config["batch_size"],100,2,device="cuda").requires_grad_(True)
 
-    def forward(self,x,condition,omega_value):
+    def forward(self,x):
         '''
         input:      x is noise [batch,noise_dimension],
                     condition is[batch,101,2]
                     omega_value is [batch,2]
         output:     fake_coeffs:[batch,basis_num*2]
         '''
-        #condition is [batch,101,2]
-        condition=condition.view(-1,202)
-
-        #embedd the condition to 10 dim for condition_out
-        condition_out=self.cond_fc1(condition)
-        # x is [batch,noise+10]
-        x=torch.cat((x,condition_out),dim=1)
-
+        #condition is [batch,200,2]
+        x=x.view(-1,400)
         #fake coeff is [batch,num_basis*2]
         fake_coeff=self.model_coeff(x)
 
@@ -159,6 +247,11 @@ output:score scalar
 class Discriminator(nn.Module):
     def __init__(self,input_dim=2*100+101*2,output=1):
         super(Discriminator, self).__init__()
+
+        self.siren2=Siren(in_features=input_dim, hidden_features=512, hidden_layers=3,
+                          out_features=1,
+                          outermost_linear=True,
+                         first_omega_0=30, hidden_omega_0=30)
 
         # flatten
         self.flatten = nn.Flatten()
@@ -219,8 +312,10 @@ def compute_w_div(real_samples, real_out, fake_samples, fake_out):
                               create_graph=True,
                               retain_graph=True, only_inputs=True)[0]
 
+
     # L2 real norm
     real_grad_norm = real_grad.view(real_grad.size(0), -1).pow(2).sum(1)
+
 
     # fake gradient
     fake_grad = torch.autograd.grad(outputs=fake_out,
@@ -241,12 +336,13 @@ def to_symbol(dict):
     '''
     symbols = []
     x = sp.symbols('x')
+    psi=sp.symbols('psi')
     for key, value in dict.items():
         if isinstance(value, str):
             if value == 'sin':
-                symbols.append(sp.sin(x))
+                symbols.append(sp.sin(x+psi))
             elif value == 'cos':
-                symbols.append(sp.cos(x))
+                symbols.append(sp.cos(x+psi))
             elif value =='x**0':
                 symbols.append(x**0)
         else:
@@ -260,7 +356,7 @@ def pick_basis_function(basis_dict:dict,basis_num=3):
     '''
     :param 1. basis_dict:is a dict like  {'basis_1': 0, 'basis_2': 'sin', 'basis_3': 'cos'}
            2. numbers=3 means that we pick the 3 basis functions
-    :return: #Matrix([[0], [sin(x)], [cos(x)]])
+    :return: #Matrix([[0], [sin(x+psi)], [cos(x+psi)]])
     '''
     # create func matrix -prior
     symbols=to_symbol(basis_dict)#[0, sin(x), cos(x)]
@@ -274,64 +370,162 @@ def Get_basis_function_info(dict,numbers=3):
                 2.numbers=3
     :return:    left_matirx:100*numbers
                 symbol_matrix:numbers*1
+                #note sympy is according to the rad
+                #1rad=180/pi
     '''
     x = sp.symbols('x')
+    psi = sp.symbols('psi')
     symbol_matrix = pick_basis_function(dict,basis_num=numbers)
-    funcs = [sp.lambdify(x, symbol_matrix[i]) for i in range(numbers)]
+
+    funcs = [sp.lambdify((x,psi), symbol_matrix[i]) for i in range(numbers)]
+
     left_matirx= torch.zeros(100,numbers,
                                     dtype=torch.float64, device='cuda')
     #generate the 100*numbers
     t = np.linspace(0,2,100)
+    psi=0
 
     for i, func in enumerate(funcs):
-        value = func(t)
+        value = func(t,psi)
         value = torch.tensor(value, dtype=torch.float64)
         left_matirx[:, i] = value
     # return the left matrix and
     return left_matirx,symbol_matrix
 
 
-def convert_data(batch_data:torch.tensor,label:torch.tensor):
+def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,step,eval=False):
     '''
      func:convert the data :1.pick the condition_data
                             2.calcul the gradient
-     3                      3.label of txt number
-     input: batch_data:[batch,100,9]
+                            3.label of txt number
+     input: real_data:[batch,100,2]
             label:[batch]
+            step:scalar
+            eval:bool,to choose if the function : uf.read_real_str(label)
      :return:    trans_condition[batch,101,2]
                  data_t[batch,100,1]
                  dict_str_solu[batch]
     '''
     device="cuda"
-    #label is the csv name
-    dict_str_solu=uf.read_real_str(label)
-    data_t = batch_data[:, :, 6].detach()
-    data_t = data_t.unsqueeze(dim=2)  # shape:[batch,100,1]
-    data_t = data_t.to(device).requires_grad_(True)
+    #label is the csv name ---eval to use!
+    if eval:
+        dict_str_solu=uf.read_real_str(label)
+    else:
+        dict_str_solu=0
 
-    # condition  is the first 6 dimen but we need to tranform
     # initial condition[batch,1,2]
     # gradint condition[batch,100,2]
     # condition=cat initial and gradient=[batch,101,2]
-    condition = batch_data[:, :, 0:6].to(device)
-    ini_condi = condition[:, 0:1, 0:2]
+    ini_condi = real_data[:, 0:1, 0:2]
+
     # critic for real data : z1_t z2_t
-    real = batch_data[:, :, 7:9].to(device).requires_grad_(True)  # [batch,100,2]
     # only for diffentiable
-    real_data4grad = real.detach()
-    real_grads = uf.calculate_diff_grads(real_data4grad, data_t, type="center_diff")
+    real_data4grad = real_data.detach()
+    real_grads = uf.calculate_diff_grads(real_data4grad, data_t, type="center_diff",plt_show=False)
     real_grads = real_grads.to(device)
-    real_grads.requires_grad_ = True
-    #condition[batch,101,2]
-    trans_condition = torch.cat((ini_condi, real_grads), dim=1)
-    trans_condition.requires_grad_=True
+    #condition[batch,200,2]
+    trans_condition = torch.cat((real_data, real_grads), dim=1)
 
-    return trans_condition,data_t,dict_str_solu
+    return trans_condition,dict_str_solu
 
-def multiply_matrix(coeff_tensor,omega_tensor,left_matrix,symbol_matrix):
+from concurrent.futures import ProcessPoolExecutor
+
+
+def compute_expression_for_batch(i,omega_batch, coeff_batch, data_t, symbol_matrix):
+    new_functions=[]
+    x = sp.symbols('x')
+    psi = sp.symbols('psi')
+
+    column,vari_=7,2
+    rows=100
+    z1_left_matirx=np.zeros((rows,column))
+    z2_left_matirx = np.zeros((rows,column))
+    z1_gradient=np.zeros((rows,1))
+    z2_gradient = np.zeros((rows, 1))
+    grad_batch=0
+    left_matrix_batch=0
+    for symbol in symbol_matrix[:, 0]:
+        if symbol ==1:
+            new_functions.append(1)
+        else:
+            for parameter in omega_batch[:]:
+                new_functions.append(symbol.subs(x, parameter*x))
+
+
+    # get the interval
+    z1_new_function = new_functions[0::2]  # like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
+    z2_new_function = new_functions[1::2]
+
+    z2_new_function.insert(0,new_functions[0])# like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
+
+
+    # substitute the psi
+    z1_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z1_new_function]
+    z2_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z2_new_function]# no constant
+
+    # get the expression
+    z1_expression = sum([coeff * function for coeff, function in zip(coeff_batch[ :,0],
+                                                                     z1_new_funcs)])
+    z2_expression = sum(
+        [coeff * function for coeff, function in zip(coeff_batch[ :,1],
+                                                     z2_new_funcs)])
+    # update the list
+    # updated_symbol_list.append(z1_expression)
+    # updated_symbol_list.append(z2_expression)
+
+    # get the derivation of expression
+    grad_z1 = sp.diff(z1_expression, x)
+    grad_z2 = sp.diff(z2_expression, x)
+
+    # get the function of grad_z1 and grad_z2
+    func_grad_z1 = sp.lambdify((x), grad_z1, "numpy")
+    func_grad_z2 = sp.lambdify((x), grad_z2, "numpy")
+
+    # get gradinet value
+    grad_z_value = func_grad_z1(data_t)
+
+    z1_gradient[:, 0] = grad_z_value
+
+    # for z2
+    grad_z_value = func_grad_z2(data_t)
+
+    z2_gradient[ :, 0] = grad_z_value
+
+    # use the left matirx rather than the analyical expression
+    # because the torch cannot support sympy
+    for j, expr in enumerate(z1_new_funcs):
+
+        if expr == 1:
+            value = coeff_batch[0,0]*np.ones(100, dtype=np.float64)
+        else:
+            func = sp.lambdify((x), expr, "numpy")
+            value = func(data_t)
+
+        z1_left_matirx[ :, j] = value
+
+    for j, expr in enumerate(z2_new_funcs):
+
+        if expr == 1:
+            value = coeff_batch[0,1]*np.ones(100, dtype=np.float64)
+        else:
+            func = sp.lambdify((x), expr, "numpy")
+            value = func(data_t)
+
+
+        z2_left_matirx[:, j] = value
+
+
+
+
+
+    return z1_left_matirx,z2_left_matirx,z1_gradient,z2_gradient
+
+
+import time
+def return_basis_matirx(coeff_tensor:torch.tensor,omega_tensor:torch.tensor,symbol_matrix):
     '''
-    input:  coeff_tensor:[batch,basis_num*2],
-            omega_tensor:[batch,2]
+    input:  coeff_tensor:[batch,freq_numbers*2,2],
+            omega_tensor:[batch,freq_numbers,2]
             left_matrix:[100,3]
             symbol_matrix:[[0][sin_(omegax)][cos_(omegax)]]
     :return: updated_symbol_list[batch*(2)],
@@ -339,91 +533,154 @@ def multiply_matrix(coeff_tensor,omega_tensor,left_matrix,symbol_matrix):
              fake_condition[batch,101,2],
              basis_matrix[batch,100,basis_num,2]
     '''
-    batch_num,basis_nums=coeff_tensor.shape
-    single_num=basis_nums//2
+
+
+    batch_num,coeff_number,vari = coeff_tensor.shape
+    _,freq_num,_=omega_tensor.shape
+    basis_nums= coeff_number #
+    single_num = basis_nums #
     # according to the to update symbol_matrix
     updated_symbol_list = []
     new_functions = []
-    data_t= np.linspace(0,2,100)
-    z1_left_matirx=torch.zeros((batch_num,100,single_num),requires_grad=True).to("cuda")
+    data_t = np.linspace(0, 2, 100)
+    #
+    z1_left_matirx = torch.zeros((batch_num, 100, single_num), requires_grad=True).to("cuda")
     z2_left_matirx = torch.zeros((batch_num, 100, single_num), requires_grad=True).to("cuda")
-    z1_gradient=torch.zeros((batch_num,100,1),requires_grad=True).to("cuda")
-    z2_gradient = torch.zeros((batch_num, 100,1), requires_grad=True).to("cuda")
+    z1_gradient = torch.zeros((batch_num, 100, 1), requires_grad=True).to("cuda")
+    z2_gradient = torch.zeros((batch_num, 100, 1), requires_grad=True).to("cuda")
 
+    #symbols
     x = sp.Symbol('x')
-    #operation for each batch we could output a symbol expression
-    for i in range(batch_num):
-        updated_symbol_list.append([])
-        for symbol in symbol_matrix[:,0]:
-            for parameter in omega_tensor[i,:]:
-                new_functions.append(symbol.subs(x,parameter*x))
+    psi=sp.Symbol('psi')
+    omega_tensor= omega_tensor.reshape(batch_num, -1)
 
-        #get the interval
-        z1_new_function=new_functions[::2]  #like [1, -sin(8.5*x), cos(8.5*x)]
-        z2_new_function=new_functions[1::2]
+    start_time = time.time()
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = []
+        for i in range(batch_num):
+            future = executor.submit(compute_expression_for_batch,i,
+                                     omega_tensor[i].cpu().numpy(),
+                                     coeff_tensor[i].cpu().detach().numpy(),
+                                     data_t,
+                                     symbol_matrix[:, 0])
+            futures.append(future)
 
-        #create the funcs
-        z1_funcs = [sp.lambdify(x, z1_new_function[ i]) for i in range(single_num)]
-        z2_funcs = [sp.lambdify(x, z2_new_function[i]) for i in range(single_num)]
+        for i, future in enumerate(futures):
+            z1_left_matirx_batch,z2_left_matirx_batch,z1_grad_batch,z2_grad_batch = future.result()
+            z1_left_matirx[i]=torch.from_numpy(z1_left_matirx_batch)
+            z2_left_matirx[i]=torch.from_numpy(z2_left_matirx_batch)
+            z1_gradient[i]=torch.from_numpy(z1_grad_batch)
+            z2_gradient[i]=torch.from_numpy(z2_grad_batch)
 
-        #get the expression
-        z1_expression = sum([coeff * function for coeff, function in zip(coeff_tensor[i,0:single_num], z1_new_function)])
-        z2_expression = sum([coeff * function for coeff, function in zip(coeff_tensor[i,single_num:], z2_new_function)])
 
-        #get the derivation of expression
-        grad_z1=sp.diff(z1_expression)
-        grad_z2=sp.diff(z2_expression)
-        func_grad_z1= sp.lambdify((x), grad_z1, "numpy")
-        func_grad_z2 = sp.lambdify((x), grad_z2, "numpy")
-        #get gradinet value
-        grad_z_value=func_grad_z1(data_t)
-        grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
-        z1_gradient[i,:,0] = grad_z_value
-        #for z2
-        grad_z_value=func_grad_z2(data_t)
-        grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
-        z2_gradient[i,:,0] = grad_z_value
-        #use the left matirx rather than the analyical expression
-        # because the torch cannot support sympy
-        for j, func in enumerate(z1_funcs):
-            value = func(data_t)
-            value = torch.tensor(value, dtype=torch.float64,requires_grad=False).to("cuda")
-            z1_left_matirx[i,:, j] = value
 
-        for j, func in enumerate(z2_funcs):
-            value = func(data_t)
-            value = torch.tensor(value, dtype=torch.float64,requires_grad=False).to("cuda")
-            z2_left_matirx[i,:, j] = value
+    end_time = time.time()
 
-        #update the list
-        updated_symbol_list[i].append(z1_expression)
-        updated_symbol_list[i].append(z2_expression)
-        new_functions=[]
-
-    #calulate the fake data by using batch matrix
-    #input1=batch*n*m(batch*100*3). input2=batch*m*p(batch*3*1)
-    #output=batch*n*p(bath*100*1)
-    coeff_tensor=coeff_tensor.reshape(-1,basis_nums,1)
-    #dimension: [100*1]=[100*3]*[3,1]
-    fake_z1 = torch.bmm(z1_left_matirx, coeff_tensor[:,0:single_num,0:1])#[batch,100,1]
-    fake_z2 = torch.bmm(z2_left_matirx, coeff_tensor[:,single_num:,0:1])#[batch,100,1]
+    left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)
+    z1_coeff = coeff_tensor[:,:,0].reshape(batch_num,single_num,1)
+    z2_coeff = coeff_tensor[:,:,1].reshape(batch_num,single_num,1)
+    fake_z1 = torch.bmm(z1_left_matirx, z1_coeff)#return [batch,100,1]
+    fake_z2 = torch.bmm(z2_left_matirx, z2_coeff)#return [batch,100,1]
 
     #fake_data
     fake_data = torch.cat((fake_z1,fake_z2),dim=2)#[batch,100,2]
 
-    fake_ini = fake_data[:,0:1,0:2]
     fake_grad=torch.cat((z1_gradient,z2_gradient),dim=2)#[batch,100,2]
+    fake_condition = torch.cat((fake_data, fake_grad), dim=1) # [batch,200,2]
+    return updated_symbol_list,left_matrix,fake_data,fake_condition
 
-    #fake_condition =cat
-    fake_condition=torch.cat((fake_ini,fake_grad),dim=1)
 
-    #basis_matrix =stack
-    left_matrix=torch.stack((z1_left_matirx,z2_left_matirx),dim=3)
-
-    return updated_symbol_list, fake_data, fake_condition,left_matrix
+    # # operation for each batch we could output a symbol expression--good but slow
+    # for i in range(batch_num):
+    #     for symbol in symbol_matrix[:, 0]:
+    #         if symbol ==1:
+    #             new_functions.append(1)
+    #         else:
+    #             for parameter in omega_tensor[i, :]:
+    #                 new_functions.append(symbol.subs(x, parameter*x))
+    #
+    #
+    #     # get the interval
+    #     z1_new_function = new_functions[0::2]  # like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
+    #     z2_new_function = new_functions[1::2]
+    #
+    #     z2_new_function.insert(0,new_functions[0])# like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
+    #
+    #
+    #     # substitute the psi
+    #     z1_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z1_new_function]
+    #     z2_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z2_new_function]# no constant
+    #
+    #     # get the expression
+    #     z1_expression = sum([coeff * function for coeff, function in zip(coeff_tensor[i, :,0].cpu().detach().numpy(),
+    #                                                                      z1_new_funcs)])
+    #     z2_expression = sum(
+    #         [coeff * function for coeff, function in zip(coeff_tensor[i, :,1].cpu().detach().numpy(),
+    #                                                      z2_new_funcs)])
+    #     # update the list
+    #     # updated_symbol_list.append(z1_expression)
+    #     # updated_symbol_list.append(z2_expression)
+    #
+    #     # get the derivation of expression
+    #     grad_z1 = sp.diff(z1_expression, x)
+    #     grad_z2 = sp.diff(z2_expression, x)
+    #
+    #     # get the function of grad_z1 and grad_z2
+    #     func_grad_z1 = sp.lambdify((x), grad_z1, "numpy")
+    #     func_grad_z2 = sp.lambdify((x), grad_z2, "numpy")
+    #
+    #     # get gradinet value
+    #     grad_z_value = func_grad_z1(data_t)
+    #     grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
+    #     z1_gradient[i, :, 0] = grad_z_value
+    #
+    #     # for z2
+    #     grad_z_value = func_grad_z2(data_t)
+    #     grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
+    #     z2_gradient[i, :, 0] = grad_z_value
+    #
+    #     # use the left matirx rather than the analyical expression
+    #     # because the torch cannot support sympy
+    #     for j, expr in enumerate(z1_new_funcs):
+    #
+    #         if expr == 1:
+    #             value = coeff_tensor[i,0,0]*torch.ones(100, dtype=torch.float64, requires_grad=False).to("cuda")
+    #         else:
+    #             func = sp.lambdify((x), expr, "numpy")
+    #             value = func(data_t)
+    #             value=torch.tensor(value, dtype=torch.float64, requires_grad=False).to("cuda")
+    #         z1_left_matirx[i, :, j] = value
+    #
+    #     for j, expr in enumerate(z2_new_funcs):
+    #
+    #         if expr == 1:
+    #             value = coeff_tensor[i,0,1]*torch.ones(100, dtype=torch.float64, requires_grad=False).to("cuda")
+    #         else:
+    #             func = sp.lambdify((x), expr, "numpy")
+    #             value = func(data_t)
+    #             value = torch.tensor(value, dtype=torch.float64, requires_grad=False).to("cuda")
+    #
+    #         z2_left_matirx[i, :, j] = value
+    #
+    #     left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)
+    #
+    #     z1_coeff = coeff_tensor[:,:,0].reshape(batch_num,single_num,1)
+    #     z2_coeff = coeff_tensor[:,:,1].reshape(batch_num,single_num,1)
+    #
+    #
+    #     fake_z1 = torch.bmm(z1_left_matirx, z1_coeff)#return [batch,100,1]
+    #     fake_z2 = torch.bmm(z2_left_matirx, z2_coeff)#return [batch,100,1]
+    #
+    #     #fake_data
+    #     fake_data = torch.cat((fake_z1,fake_z2),dim=2)#[batch,100,2]
+    #
+    #     fake_grad=torch.cat((z1_gradient,z2_gradient),dim=2)#[batch,100,2]
+    #     fake_condition = torch.cat((fake_data, fake_grad), dim=1) # [batch,200,2]
+    #
+    #return updated_symbol_list,left_matrix,fake_data,fake_condition
 
 import torch.nn.functional as F
-# 定义 soft_argmax 和 compute_spectrum 如前所述
+#  soft_argmax & compute_spectrum
 def soft_argmax(x, beta=1.0):
     """
         param:  1.x is freq_index [batch,51,1]
@@ -435,37 +692,78 @@ def soft_argmax(x, beta=1.0):
     return torch.sum(softmax * indices, dim=-1)
 import matplotlib.pyplot as plt
 import numpy as np
-def compute_spectrum(tensor, sampling_rate=50, num_samples=100, device="cuda",argmax=1):
+def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
+                     beta=1,
+                     freq_number=1,
+                     train_step=0,path=0):
 
     '''
     Input:
             :param tensor: [batch,100,2]
-            :param sampling_rate: 50 hz
+            :param sampling_rate: 49.5 hz
+            :param freq_number: 1
             :note =omega/2*pi
+            :train_step
+            :every epoch save the spectrum
+
     return: omega= resolution * freq_index*2pi:soft_argmax [batch,2]
     '''
 
     batch,_,vari_dimension = tensor.size()
-    soft_freq_index = torch.zeros((batch,vari_dimension), requires_grad=True).to(device)
-
+    resolution=sampling_rate/num_samples
+    soft_freq_index = torch.zeros((batch,3,vari_dimension), requires_grad=True).to(device)
+    training_omage = {}
+    # note： the P_freqs has 0 hz，and resolution=2/99=49.5hz
+    P_freqs = torch.fft.rfftfreq(num_samples, d=1 / sampling_rate)[:].to(device)  # [batch，50，2]
     for i in range(vari_dimension):
 
         #fft & P_freqs(positive freqs)
         spectrum = torch.fft.rfft(tensor[:,:,i]) #return [batch，51，2]
 
-        #note： the P_freqs has 0 hz，and resolution=50/100=0.5hz
-        P_freqs = torch.fft.rfftfreq(num_samples, d=1 / sampling_rate)[:sampling_rate+1].to(device)#[batch，51，2]
-
         #magnitude abs
         magnitude = torch.abs(spectrum)  #[batch,51]
 
         #soft_argmax
-        soft_argmax_freq_index = soft_argmax(magnitude)#[batch,1]
-        soft_freq_index[:,i] = soft_argmax_freq_index
+        # soft_argmax_freq_index = soft_argmax(magnitude,beta)#[batch,1]
+        # soft_freq_index[:,i] = soft_argmax_freq_index
+        for j in range(freq_number):
+            soft_idx = soft_argmax(magnitude, beta)  # [batch]
+            soft_idx = soft_idx.reshape(batch,1)
+            soft_freq_index[:, j:j+1, i] = soft_idx
+            # Mask the magnitude by setting the maximum value to a very small value--0
+            top_val, top_idx = torch.max(magnitude, dim=1, keepdim=True)
+            magnitude.scatter_(1, top_idx,0)
+        #save for plot
+        if train_step % 256 ==0:
+            epoch_omega=train_step/256
+            training_omage={"raw_data":tensor,
+                       "P_freqs":P_freqs,
+                       "soft_freq_index":soft_freq_index,
+                       "epoch":epoch_omega,
+                     }
+            torch.save(training_omage, path+f"{int(epoch_omega)}.pth")
 
-    soft_omega=soft_freq_index*0.5*2*torch.pi
+
+    soft_omega=soft_freq_index*resolution*2*torch.pi
 
     return soft_omega
+def compute_sequence(fake_coeffs,generator_freq,dict):
+    '''
+    :param fake_coeffs: [batch,7,2]
+    :param generator_freq: [batch,3,2]
+    :param str: dict{"basis_1": "x**0", "basis_2": "sin", "basis_3": "cos"}
+    :return: [batch,2]
+    '''
+    batch,_,vari_dimension = fake_coeffs.size()
+    sequence = torch.zeros((batch,vari_dimension), requires_grad=True).to("cuda")
+
+
+
+
+    return sequence
+
+
+
 
 
 if __name__=="__main__":
