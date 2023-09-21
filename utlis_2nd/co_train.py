@@ -47,9 +47,6 @@ class train_init():
         self.beta = self.config["beta"]
         self.freq_numbers = self.config["freq_numbers"]
 
-
-
-
     def train_inference_neural(self,*args):
         '''
         train the inference neural network
@@ -82,38 +79,38 @@ class train_init():
                                                         beta=self.config["beta"],
                                                         freq_number=self.config["freq_numbers"],
                                                         train_step=S_I_step,
-                                                        path=self.config["save_plot_tb_path"] + self.config[
-                                                            "training_data_path"] +self. config[
-                                                                 "training_inference_path"] + "/real")
+                                                        filepath=self.config["save_plot_tb_path"] + self.config[
+                                                            "training_data_path"] +self. config["training_inference_path"],
+                                                        name="real")
 
                 # inference loss
-                fake_coeffs = self.S_I(real_condition)
-                fake_coeffs = fake_coeffs.reshape(self.config["batch_size"], -1, 2)
+                pred_coeffs = self.S_I(real_condition)
+                pred_coeffs = pred_coeffs.reshape(self.config["batch_size"], -1, 2)
 
                 if S_I_step == 1:
                     left_matrix, symbol_matrix = gan_nerual.Get_basis_function_info(self.config['prior_knowledge'])
 
-                updated_symbol_list_z1, left_matrix, fake_data, fake_condition = gan_nerual.return_torch_version_matrix(
-                    fake_coeffs,
+                updated_symbol_list_z1, left_matrix, pred_data, pred_condition = gan_nerual.return_torch_version_matrix(
+                    pred_coeffs,
                     generator_freq,
                     symbol_matrix)
-                fake_freq = gan_nerual.compute_spectrum(fake_data,
+                pred_freq = gan_nerual.compute_spectrum(pred_data,
                                                         beta=self.config["beta"],
                                                         freq_number=self.config["freq_numbers"],
                                                         train_step=S_I_step,
-                                                        path=self.config["save_plot_tb_path"] + self.config[
-                                                            "training_data_path"] + self.config[
-                                                                 "training_inference_path"] + "/fake")
+                                                        filepath=self.config["save_plot_tb_path"] + self.config[
+                                                            "training_data_path"] + self.config["training_inference_path"],
+                                                        name="pred")
 
                 # save for the data---PINN
-                mse_loss = self.criterion_inference(fake_data, real)
+                mse_loss = self.criterion_inference(pred_data, real)
                 self.mse_loss_list.append(mse_loss)
-                fouier_loss = self.criterion_fourier(fake_freq, real_freq)
+                fouier_loss = self.criterion_fourier(pred_freq, real_freq)
                 self.fourier_loss_list.append(fouier_loss)
                 # just for record
-                gradient_loss = self.criterion_grad(fake_condition[:, 100:, :], real_condition[:, 100:, :])
+                gradient_loss = self.criterion_grad(pred_condition[:, 100:, :], real_condition[:, 100:, :])
                 self.grad_loss_list.append(gradient_loss)
-                ini_loss = self.criterion_ini(fake_condition[:, 0, :], real_condition[:, 0, :])
+                ini_loss = self.criterion_ini(pred_condition[:, 0, :], real_condition[:, 0, :])
                 self.ini_loss_list.append(ini_loss)
 
                 infer_loss = mse_loss + self.config["lamba_fourier"] * fouier_loss
@@ -192,10 +189,10 @@ class train_init():
                                                         beta=self.config["beta"],
                                                         freq_number=self.config["freq_numbers"],
                                                         train_step=S_Omega_step,
-                                                        path=self.config["save_plot_tb_path"]\
+                                                        filepath=self.config["save_plot_tb_path"]\
                                                              + self.config["training_data_path"]  \
-                                                             + self.config["training_omega_data_path"]
-                                                             + "\real")
+                                                             + self.config["training_omega_data_path"],
+                                                        name="real")
                 # g_omega_loss
                 g_omega_freq_loss = self.criterion_fourier(generator_freq, real_freq)
                 self.g_omega_freq_loss_list.append(g_omega_freq_loss)
@@ -222,9 +219,9 @@ class train_init():
                 }
                 torch.save(checkpoint, self.config["save_plot_tb_path"] + '/omega_checkpoint.pth')
             with torch.no_grad():
-                eval_value=self.eval_omega_model(eval_data=self.valid_loader,
+                eval_mse_value,u_stat=self.eval_omega_model(eval_data=self.valid_loader,
                                  eval_epoch=epoch)
-        return eval_value
+        return eval_mse_value,u_stat
 
     def eval_inference_model(self, eval_data,eval_epoch):
         '''
@@ -258,10 +255,10 @@ class train_init():
             generator_freq = generator_freq.reshape(-1, self.config["freq_numbers"], 2)
 
             # inference loss
-            fake_coeffs = self.S_I(real_condition)
-            fake_coeffs = fake_coeffs.reshape(-1, (2 * self.config["freq_numbers"] + 1), 2)
-            updated_symbol_list, left_matrix, fake_data, fake_condition = gan_nerual.return_torch_version_matrix(
-                fake_coeffs,
+            pred_coeffs = self.S_I(real_condition)
+            pred__coeffs = pred__coeffs.reshape(-1, (2 * self.config["freq_numbers"] + 1), 2)
+            updated_symbol_list, left_matrix, pred_data, pred_condition = gan_nerual.return_torch_version_matrix(
+                pred__coeffs,
                 generator_freq,
                 symbol_matrix
             )
@@ -269,38 +266,38 @@ class train_init():
                                                     beta=self.config["beta"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=S_I_eval_step,
-                                                    path=self.config["save_plot_tb_path"] \
+                                                    filepath=self.config["save_plot_tb_path"] \
                                                          + self.config["eval_data_path"] \
-                                                         + self.config["eval_inference_path"] \
-                                                         + "\real")
-            pred_freq = gan_nerual.compute_spectrum(fake_data,
+                                                         + self.config["eval_inference_path"],
+                                                    name="real")
+            pred_freq = gan_nerual.compute_spectrum(pred_data,
                                                     beta=self.config["beta"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=S_I_eval_step,
-                                                    path=self.config["save_plot_tb_path"] \
+                                                    filepath=self.config["save_plot_tb_path"] \
                                                          + self.config["eval_data_path"] \
-                                                         + self.config["eval_inference_path"] \
-                                                         + "\fake")
+                                                         + self.config["eval_inference_path"],
+                                                    name="pred")
 
             # g_omega_loss
             g_omega_freq_loss = criterion_fourier(pred_freq, real_freq)
             eval_freq_loss_list.append(g_omega_freq_loss)
             # data_loss
-            data_loss = criterion_fourier(fake_data, real)
+            data_loss = criterion_fourier(pred_data, real)
             eval_data_loss_list.append(data_loss)
             # grad_loss
-            grad_loss = criterion_fourier(fake_condition[:, 100:, :], real_condition[:, 100:, :])
+            grad_loss = criterion_fourier(pred_condition[:, 100:, :], real_condition[:, 100:, :])
             eval_grad_loss_list.append(grad_loss)
             # u_stat
             u_stat_freq = uf.theil_u_statistic(pred_freq, real_freq)
-            u_stat_data = uf.theil_u_statistic(fake_data, real)
-            u_stat_condition = uf.theil_u_statistic(fake_condition[:, 100:, :], real_condition[:, 100:, :])
+            u_stat_data = uf.theil_u_statistic(pred_data, real)
+            u_stat_condition = uf.theil_u_statistic(pred_condition[:, 100:, :], real_condition[:, 100:, :])
             eval_u_stat_freq_list.append(u_stat_freq)
             eval_u_stat_data_list.append(u_stat_data)
             eval_u_stat_grad_list.append(u_stat_condition)
             # cost_matirx infinite_norm
 
-        cost_matrix = uf.cost_matrix(real, fake_data)  # [batch,50,50,2]
+        cost_matrix = uf.cost_matrix(real,pred_data)  # [batch,50,50,2]
         infinite_norm = [uf.infinity_norm(cost_matrix[i]) for i in range(cost_matrix.shape[0])]
         infinite_norm_avr = np.mean(infinite_norm)
         eval_infinite_cost_list.append(infinite_norm_avr)
@@ -324,7 +321,7 @@ class train_init():
                                                    }, eval_epoch)
         return eval_data_loss
 
-    def eval_omega_model(self,eval_data,eval_epoch):
+    def eval_omega_model(self,eval_data,eval_epoch,name="eval_omega"):
         '''
          :param eval_data: eval data
           record mse and u-stat
@@ -356,10 +353,10 @@ class train_init():
                                                     beta=self.config["beta"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=eval_step,
-                                                    path=self.config["save_plot_tb_path"]\
+                                                    filepath=self.config["save_plot_tb_path"]\
                                                          +self.config["eval_data_path"] \
-                                                         +self.config["eval_omega_data_path"] \
-                                                         + '\real')
+                                                         +self.config["eval_omega_data_path"],
+                                                    name="real")
 
             # g_omega_loss
             g_omega_freq_loss = criterion_fourier(generator_freq, real_freq)
@@ -371,7 +368,7 @@ class train_init():
         eval_mse_loss = sum(eval_mse_loss_list) / len(eval_mse_loss_list)
         eval_u = sum(eval_u_stat_list) / len(eval_u_stat_list)
 
-        self.writer.add_scalars("eval_omega", {"mse_loss": eval_mse_loss,
-                                          "u_stat": eval_u,
-                                          }, eval_epoch)
-        return eval_mse_loss
+        self.writer.add_scalars(name, {"mse_loss": eval_mse_loss,
+                                               "u_stat": eval_u,
+                                                }, eval_epoch)
+        return eval_mse_loss,eval_u

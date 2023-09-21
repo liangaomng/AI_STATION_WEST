@@ -638,7 +638,7 @@ import numpy as np
 def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
                      beta=1,
                      freq_number=1,
-                     train_step=0,path=0):
+                     train_step=0,filepath=0,name=""):
 
     '''
     Input:
@@ -655,7 +655,7 @@ def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
     batch,_,vari_dimension = tensor.size()
     resolution=sampling_rate/num_samples
     soft_freq_index = torch.zeros((batch,3,vari_dimension), requires_grad=True).to(device)
-    training_omage = {}
+
     # note： the P_freqs has 0 hz，and resolution=2/99=49.5hz
     P_freqs = torch.fft.rfftfreq(num_samples, d=1 / sampling_rate)[:].to(device)  # [batch，50，2]
     for i in range(vari_dimension):
@@ -676,15 +676,18 @@ def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
             # Mask the magnitude by setting the maximum value to a very small value--0
             top_val, top_idx = torch.max(magnitude, dim=1, keepdim=True)
             magnitude.scatter_(1, top_idx,0)
+
+        soft_omega = soft_freq_index * resolution * 2 * torch.pi
         #save for plot
         if train_step % 256 ==0:
             epoch_omega=train_step/256
-            training_omage={"raw_data":tensor,
-                       "P_freqs":P_freqs,
-                       "soft_freq_index":soft_freq_index,
-                       "epoch":epoch_omega,
+            info={"raw_data":tensor,
+                        "P_freqs":P_freqs,
+                        "soft_freq_index":soft_freq_index,
+                        "soft_omega":soft_omega,
+                        "epoch":epoch_omega,
                      }
-            torch.save(training_omage, path+f"{int(epoch_omega)}.pth")
+            torch.save(info, path=filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
 
 
     soft_omega=soft_freq_index*resolution*2*torch.pi
@@ -699,9 +702,6 @@ def compute_sequence(fake_coeffs,generator_freq,dict):
     '''
     batch,_,vari_dimension = fake_coeffs.size()
     sequence = torch.zeros((batch,vari_dimension), requires_grad=True).to("cuda")
-
-
-
 
     return sequence
 
