@@ -119,9 +119,6 @@ class omega_generator(nn.Module):
         self.rational_function_1=Rational()
         self.rational_function_2=Rational()
 
-        self.siren1=Siren(in_features=input_dim, hidden_features=512, hidden_layers=3, out_features=output_dim,
-                          outermost_linear=True,
-                         first_omega_0=30, hidden_omega_0=30)
 
         self.omega_fc1=nn.Sequential(
             nn.Linear(input_dim,512),
@@ -142,7 +139,9 @@ class omega_generator(nn.Module):
         :param x: [batch,200,2] ini &gradinets 100*2
         :return: [batch,1]
         '''
+
         x=x.view(-1,400)
+
         self.omega=self.omega_fc1(x)
         #discrete
         #self.omega=RoundWithPrecisionSTE.apply(self.omega,1)
@@ -380,16 +379,19 @@ def Get_basis_function_info(dict,numbers=3):
     funcs = [sp.lambdify((x,psi), symbol_matrix[i]) for i in range(numbers)]
 
     left_matirx= torch.zeros(100,numbers,
-                                    dtype=torch.float64, device='cuda')
+                             dtype=torch.float64,
+                             device='cuda')
     #generate the 100*numbers
     t = np.linspace(0,2,100)
     psi=0
 
     for i, func in enumerate(funcs):
+
         value = func(t,psi)
         value = torch.tensor(value, dtype=torch.float64)
         left_matirx[:, i] = value
-    # return the left matrix and
+
+
     return left_matirx,symbol_matrix
 
 
@@ -522,162 +524,103 @@ def compute_expression_for_batch(i,omega_batch, coeff_batch, data_t, symbol_matr
 
 
 import time
-def return_basis_matirx(coeff_tensor:torch.tensor,omega_tensor:torch.tensor,symbol_matrix):
-    '''
-    input:  coeff_tensor:[batch,freq_numbers*2,2],
-            omega_tensor:[batch,freq_numbers,2]
-            left_matrix:[100,3]
-            symbol_matrix:[[0][sin_(omegax)][cos_(omegax)]]
-    :return: updated_symbol_list[batch*(2)],
-             fake_data[batch,100,2],
-             fake_condition[batch,101,2],
-             basis_matrix[batch,100,basis_num,2]
-    '''
 
 
-    batch_num,coeff_number,vari = coeff_tensor.shape
-    _,freq_num,_=omega_tensor.shape
-    basis_nums= coeff_number #
-    single_num = basis_nums #
-    # according to the to update symbol_matrix
-    updated_symbol_list = []
+def generate_new_functions(symbol_matrix, omega_tensor_batch):
     new_functions = []
-    data_t = np.linspace(0, 2, 100)
-    #
-    z1_left_matirx = torch.zeros((batch_num, 100, single_num), requires_grad=True).to("cuda")
-    z2_left_matirx = torch.zeros((batch_num, 100, single_num), requires_grad=True).to("cuda")
-    z1_gradient = torch.zeros((batch_num, 100, 1), requires_grad=True).to("cuda")
-    z2_gradient = torch.zeros((batch_num, 100, 1), requires_grad=True).to("cuda")
-
-    #symbols
     x = sp.Symbol('x')
-    psi=sp.Symbol('psi')
-    omega_tensor= omega_tensor.reshape(batch_num, -1)
-
-    start_time = time.time()
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = []
-        for i in range(batch_num):
-            future = executor.submit(compute_expression_for_batch,i,
-                                     omega_tensor[i].cpu().numpy(),
-                                     coeff_tensor[i].cpu().detach().numpy(),
-                                     data_t,
-                                     symbol_matrix[:, 0])
-            futures.append(future)
-
-        for i, future in enumerate(futures):
-            z1_left_matirx_batch,z2_left_matirx_batch,z1_grad_batch,z2_grad_batch = future.result()
-            z1_left_matirx[i]=torch.from_numpy(z1_left_matirx_batch)
-            z2_left_matirx[i]=torch.from_numpy(z2_left_matirx_batch)
-            z1_gradient[i]=torch.from_numpy(z1_grad_batch)
-            z2_gradient[i]=torch.from_numpy(z2_grad_batch)
+    for symbol in symbol_matrix[:, 0]:
+        if symbol == 1:
+            new_functions.append(1)
+        else:
+            for parameter in omega_tensor_batch:
+                new_functions.append(symbol.subs(x, parameter * x))
+    return new_functions
 
 
-
-    end_time = time.time()
-
-    left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)
-    z1_coeff = coeff_tensor[:,:,0].reshape(batch_num,single_num,1)
-    z2_coeff = coeff_tensor[:,:,1].reshape(batch_num,single_num,1)
-    fake_z1 = torch.bmm(z1_left_matirx, z1_coeff)#return [batch,100,1]
-    fake_z2 = torch.bmm(z2_left_matirx, z2_coeff)#return [batch,100,1]
-
-    #fake_data
-    fake_data = torch.cat((fake_z1,fake_z2),dim=2)#[batch,100,2]
-
-    fake_grad=torch.cat((z1_gradient,z2_gradient),dim=2)#[batch,100,2]
-    fake_condition = torch.cat((fake_data, fake_grad), dim=1) # [batch,200,2]
-    return updated_symbol_list,left_matrix,fake_data,fake_condition
+def get_function_expressions(coeff_tensor_batch, new_functions):
+    psi = sp.Symbol('psi')
+    z1_new_functions = [func.subs(psi, 0) if hasattr(func, 'subs') else func for func in new_functions[0::2]]
+    z2_new_functions = [func.subs(psi, 0) if hasattr(func, 'subs') else func for func in new_functions[1::2]]
+    z2_new_functions.insert(0, new_functions[0])
+    z1_expression = sum([coeff * func for coeff, func in zip(coeff_tensor_batch[:, 0], z1_new_functions)])
+    z2_expression = sum([coeff * func for coeff, func in zip(coeff_tensor_batch[:, 1], z2_new_functions)])
+    return z2_new_functions,z2_new_functions,z1_expression, z2_expression
 
 
-    # # operation for each batch we could output a symbol expression--good but slow
-    # for i in range(batch_num):
-    #     for symbol in symbol_matrix[:, 0]:
-    #         if symbol ==1:
-    #             new_functions.append(1)
-    #         else:
-    #             for parameter in omega_tensor[i, :]:
-    #                 new_functions.append(symbol.subs(x, parameter*x))
-    #
-    #
-    #     # get the interval
-    #     z1_new_function = new_functions[0::2]  # like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
-    #     z2_new_function = new_functions[1::2]
-    #
-    #     z2_new_function.insert(0,new_functions[0])# like [1, -sin(8.5*x+psi), cos(8.5*x+psi)]
-    #
-    #
-    #     # substitute the psi
-    #     z1_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z1_new_function]
-    #     z2_new_funcs = [func.subs(psi,0) if hasattr(func, 'subs') else func for func in z2_new_function]# no constant
-    #
-    #     # get the expression
-    #     z1_expression = sum([coeff * function for coeff, function in zip(coeff_tensor[i, :,0].cpu().detach().numpy(),
-    #                                                                      z1_new_funcs)])
-    #     z2_expression = sum(
-    #         [coeff * function for coeff, function in zip(coeff_tensor[i, :,1].cpu().detach().numpy(),
-    #                                                      z2_new_funcs)])
-    #     # update the list
-    #     # updated_symbol_list.append(z1_expression)
-    #     # updated_symbol_list.append(z2_expression)
-    #
-    #     # get the derivation of expression
-    #     grad_z1 = sp.diff(z1_expression, x)
-    #     grad_z2 = sp.diff(z2_expression, x)
-    #
-    #     # get the function of grad_z1 and grad_z2
-    #     func_grad_z1 = sp.lambdify((x), grad_z1, "numpy")
-    #     func_grad_z2 = sp.lambdify((x), grad_z2, "numpy")
-    #
-    #     # get gradinet value
-    #     grad_z_value = func_grad_z1(data_t)
-    #     grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
-    #     z1_gradient[i, :, 0] = grad_z_value
-    #
-    #     # for z2
-    #     grad_z_value = func_grad_z2(data_t)
-    #     grad_z_value = torch.tensor(grad_z_value, dtype=torch.float64, requires_grad=True).to("cuda")
-    #     z2_gradient[i, :, 0] = grad_z_value
-    #
-    #     # use the left matirx rather than the analyical expression
-    #     # because the torch cannot support sympy
-    #     for j, expr in enumerate(z1_new_funcs):
-    #
-    #         if expr == 1:
-    #             value = coeff_tensor[i,0,0]*torch.ones(100, dtype=torch.float64, requires_grad=False).to("cuda")
-    #         else:
-    #             func = sp.lambdify((x), expr, "numpy")
-    #             value = func(data_t)
-    #             value=torch.tensor(value, dtype=torch.float64, requires_grad=False).to("cuda")
-    #         z1_left_matirx[i, :, j] = value
-    #
-    #     for j, expr in enumerate(z2_new_funcs):
-    #
-    #         if expr == 1:
-    #             value = coeff_tensor[i,0,1]*torch.ones(100, dtype=torch.float64, requires_grad=False).to("cuda")
-    #         else:
-    #             func = sp.lambdify((x), expr, "numpy")
-    #             value = func(data_t)
-    #             value = torch.tensor(value, dtype=torch.float64, requires_grad=False).to("cuda")
-    #
-    #         z2_left_matirx[i, :, j] = value
-    #
-    #     left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)
-    #
-    #     z1_coeff = coeff_tensor[:,:,0].reshape(batch_num,single_num,1)
-    #     z2_coeff = coeff_tensor[:,:,1].reshape(batch_num,single_num,1)
-    #
-    #
-    #     fake_z1 = torch.bmm(z1_left_matirx, z1_coeff)#return [batch,100,1]
-    #     fake_z2 = torch.bmm(z2_left_matirx, z2_coeff)#return [batch,100,1]
-    #
-    #     #fake_data
-    #     fake_data = torch.cat((fake_z1,fake_z2),dim=2)#[batch,100,2]
-    #
-    #     fake_grad=torch.cat((z1_gradient,z2_gradient),dim=2)#[batch,100,2]
-    #     fake_condition = torch.cat((fake_data, fake_grad), dim=1) # [batch,200,2]
-    #
-    #return updated_symbol_list,left_matrix,fake_data,fake_condition
+def get_gradient(expression):
+    x = sp.Symbol('x')
+    gradient = sp.diff(expression, x)
+    return sp.lambdify(x, gradient, "numpy")
+
+
+def get_left_matrix_values(expression, coeff_tensor_batch, data_t):
+    if expression == 1:
+        value = coeff_tensor_batch[0] * torch.ones(100, dtype=torch.float64).to("cuda")
+    else:
+        func = sp.lambdify(sp.Symbol('x'), expression, "numpy")
+        value = torch.tensor(func(data_t), dtype=torch.float64).to("cuda")
+    return value
+
+
+def return_torch_version_matrix(coeff_tensor, omega_tensor, symbol_matrix):
+    '''
+
+    :param coeff_tensor: [batch,coeff_number,vari]
+    :param omega_tensor:
+    :param symbol_matrix: [[1],[sin]...]
+    :return:
+    '''
+    batch_num, coeff_number, vari = coeff_tensor.shape
+    _, freq_num, _ = omega_tensor.shape
+    basis_nums = coeff_number  #
+    # according to the to update symbol_matrix
+    updated_symbol_list_z1 = []
+    updated_symbol_list_z2 = []
+    new_functions = []
+    data_t = torch.linspace(0, 2, 100).unsqueeze(0).unsqueeze(2).to("cuda")  # shape (1, 100, 1). to("cuda")
+    # get the left_matirx
+    #[32,100,7]
+    z1_left_matirx = torch.zeros((batch_num, 100, basis_nums), requires_grad=True).to("cuda")
+    z2_left_matirx = torch.zeros((batch_num, 100, basis_nums), requires_grad=True).to("cuda")
+    omega_z1= omega_tensor[:,:,0]  # Shape is (32, 3)
+    omega_z2 = omega_tensor[:, :, 1]  # Shape is (32, 3)
+
+    for i,exprs in enumerate(symbol_matrix[:, 0]):
+
+
+        if exprs==1:
+            #batch multiply
+            a = torch.ones((batch_num,100),dtype=torch.float64).to("cuda") * coeff_tensor[:, 0, 0].unsqueeze(1)
+            b = torch.ones((batch_num,100),dtype=torch.float64).to("cuda") * coeff_tensor[:, 0, 1].unsqueeze(1)
+            z1_left_matirx[:,:,0] = a
+            z2_left_matirx[:,:,0] = b
+
+        elif isinstance(exprs, sp.sin):
+
+            #[batch,100,freq_numbers]
+            z1 = torch.sin(omega_z1.unsqueeze(1) * data_t)  # Broadcasting is done here
+            z1_left_matirx[:,:,1:freq_num+1] = z1
+            z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
+            z2_left_matirx[:,:,1:freq_num+1] = z2
+
+        elif isinstance(exprs, sp.cos):
+            #[batch,100,freq_numbers]
+            z1 = torch.cos(omega_z1.unsqueeze(1)  * data_t)  # Broadcasting is done here
+            z1_left_matirx[:,:,freq_num+1:] = z1
+            z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
+            z2_left_matirx[:,:,freq_num+1:] = z2
+
+    left_matrix=torch.stack((z1_left_matirx,z2_left_matirx),dim=3)#[32, 100, 7, 2]
+
+    fake_z1 = torch.bmm(left_matrix[:,:,:,0], coeff_tensor[:,:,0:1])  # return [batch,100,1]
+    fake_z2 = torch.bmm(left_matrix[:,:,:,1], coeff_tensor[:,:,1:2])  # return [batch,100,1]
+    fake_data=torch.cat((fake_z1,fake_z2),dim=2)
+    fake_gradient=uf.calculate_diff_grads(fake_data,data_t,plt_show=False)
+    fake_condition = torch.cat((fake_data, fake_gradient), dim=1)  # [batch,200,2]
+
+    return dict,left_matrix,fake_data,fake_condition
+
 
 import torch.nn.functional as F
 #  soft_argmax & compute_spectrum

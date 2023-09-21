@@ -625,12 +625,15 @@ def theil_u_statistic(y_true, y_pred):
     return u_statistic
 import ot
 import matplotlib.colors as mcolors
+matrix_step=0
 def cost_matrix(real,fake,sampling_hz=49.5):
     '''
     :param real: [batch,100,2]
     :param fake: [batch,100,2]
     :return: [batch,50,50,2]
     '''
+    global matrix_step
+    matrix_step=matrix_step+1
     batch_size,_,vari=real.size()
     M = np.zeros((batch_size,50,50,2))
     real_fft_result = torch.fft.rfft(real, dim=1)
@@ -645,25 +648,30 @@ def cost_matrix(real,fake,sampling_hz=49.5):
     real_frequencies = P_real_freqs[index[0]]
     fake_spectrum = fake_fft_result[:,index[0],:].cpu().detach().numpy()#[batch,50,2
     fake_frequencies = P_fake_freqs[index[0]]
-    plt.figure(figsize=(12, 6))
 
-    plt.subplot(1, 2, 1)
-    label_size=20
-    title_size=20
-    plt.hist(real_frequencies, bins=50, weights=np.abs(real_spectrum[0,:,0]), alpha=0.6, label='Original Spectrum', color="g")
-    plt.hist(fake_frequencies, bins=50, weights=np.abs(fake_spectrum[0,:,1]), alpha=0.6, label='Target Spectrum', color="b")
-    plt.xlabel("Frequency (Hz)", fontsize=label_size)
-    plt.ylabel("Magnitude", fontsize=label_size)
-    plt.legend()
-    plt.grid("True")
-    plt.title("Frequency Components Histogram", fontsize=title_size)
 
     #cost matrix
     for i in range(batch_size):
         for j in range(vari):
             value= ot.utils.dist(np.abs(real_spectrum[i,:,j]).reshape(-1,1), np.abs(fake_spectrum[i,:,j]).reshape(-1,1))
             M[i,:,:,j]=value
+    print(matrix_step)
 
+    # #plot
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    label_size = 20
+    title_size = 20
+    plt.hist(real_frequencies, bins=50, weights=np.abs(real_spectrum[0, :, 0]), alpha=0.6, label='Original Spectrum',
+             color="g")
+    plt.hist(fake_frequencies, bins=50, weights=np.abs(fake_spectrum[0, :, 1]), alpha=0.6, label='Target Spectrum',
+             color="b")
+    plt.xlabel("Frequency (Hz)", fontsize=label_size)
+    plt.ylabel("Magnitude", fontsize=label_size)
+    plt.legend()
+    plt.grid("True")
+    plt.title("Frequency Components Histogram", fontsize=title_size)
     plt.subplot(1, 2, 2)
     plt.imshow(M[0,:,:,0], cmap='viridis',norm=mcolors.LogNorm())
     plt.grid("True")
@@ -671,8 +679,12 @@ def cost_matrix(real,fake,sampling_hz=49.5):
     plt.title("Cost Matrix Heatmap", fontsize=title_size)
     plt.xlabel("Original Frequencies", fontsize=label_size)
     plt.ylabel("Target Frequencies", fontsize=label_size)
-    plt.show()
     plt.tight_layout()
+    plt.savefig("cost_matrix"+str(matrix_step)+".png")
+    plt.close()
+
+
+
     return M
 def infinity_norm(matrix):
     '''
@@ -684,10 +696,6 @@ def infinity_norm(matrix):
     result = [np.max(inf_norm[i]) for i in range(2)] #two elements like[1.2,3.4]
     average_inf_norm = np.mean(result, axis=0)
     return average_inf_norm
-
-
-
-
 
 
 if __name__ == "__main__":
