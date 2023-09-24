@@ -5,6 +5,7 @@ import numpy as np
 from sympy import Symbol
 import utlis_2nd.utlis_funcs as uf
 import matplotlib.pyplot as plt
+
 '''
     class: generator
     define generator network 
@@ -121,6 +122,7 @@ class omega_generator(nn.Module):
 
 
         self.omega_fc1=nn.Sequential(
+            nn.LayerNorm([400]),
             nn.Linear(input_dim,512),
             nn.BatchNorm1d(512),
             self.rational_function_1,
@@ -513,17 +515,11 @@ def compute_expression_for_batch(i,omega_batch, coeff_batch, data_t, symbol_matr
             func = sp.lambdify((x), expr, "numpy")
             value = func(data_t)
 
-
         z2_left_matirx[:, j] = value
-
-
-
 
 
     return z1_left_matirx,z2_left_matirx,z1_gradient,z2_gradient
 
-
-import time
 
 
 def generate_new_functions(symbol_matrix, omega_tensor_batch):
@@ -572,6 +568,7 @@ def return_torch_version_matrix(coeff_tensor, omega_tensor, symbol_matrix):
     :return:
     '''
     batch_num, coeff_number, vari = coeff_tensor.shape
+
     _, freq_num, _ = omega_tensor.shape
     basis_nums = coeff_number  #
     # according to the to update symbol_matrix
@@ -635,33 +632,36 @@ def soft_argmax(x, beta=1.0):
     return torch.sum(softmax * indices, dim=-1)
 import matplotlib.pyplot as plt
 import numpy as np
-def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
+def compute_spectrum(data_tensor,sampling_rate=49.5,
+                     num_samples=100, device="cuda",
                      beta=1,
-                     freq_number=1,
+                     freq_number=1,domin_number=32,
                      train_step=0,filepath=0,name=""):
 
     '''
     Input:
             :param tensor: [batch,100,2]
+            :pred_freq_tensor: [batch,freq_number,2]
             :param sampling_rate: 49.5 hz
             :param freq_number: 1
             :note =omega/2*pi
+
             :train_step
             :every epoch save the spectrum
 
     return: omega= resolution * freq_index*2pi:soft_argmax [batch,2]
     '''
 
-    batch,_,vari_dimension = tensor.size()
+    batch,_,vari_dimension = data_tensor.size()
     resolution=sampling_rate/num_samples
-    soft_freq_index = torch.zeros((batch,3,vari_dimension), requires_grad=True).to(device)
+    soft_freq_index = torch.zeros((batch,freq_number,vari_dimension), requires_grad=True).to(device)
 
     # note： the P_freqs has 0 hz，and resolution=2/99=49.5hz
     P_freqs = torch.fft.rfftfreq(num_samples, d=1 / sampling_rate)[:].to(device)  # [batch，50，2]
     for i in range(vari_dimension):
 
         #fft & P_freqs(positive freqs)
-        spectrum = torch.fft.rfft(tensor[:,:,i]) #return [batch，51，2]
+        spectrum = torch.fft.rfft(data_tensor[:,:,i]) #return [batch，51，2]
 
         #magnitude abs
         magnitude = torch.abs(spectrum)  #[batch,51]
@@ -678,17 +678,19 @@ def compute_spectrum(tensor, sampling_rate=49.5, num_samples=100, device="cuda",
             magnitude.scatter_(1, top_idx,0)
 
         soft_omega = soft_freq_index * resolution * 2 * torch.pi
-        #save for plot
-        if train_step % 256 ==0:
-            epoch_omega=train_step/256
-            info={"raw_data":tensor,
-                        "P_freqs":P_freqs,
-                        "soft_freq_index":soft_freq_index,
-                        "soft_omega":soft_omega,
-                        "epoch":epoch_omega,
-                     }
-            torch.save(info, path=filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
 
+    #save for plot
+    if train_step % domin_number ==0:
+
+        epoch_omega=train_step/domin_number
+        info={      "raw_data":data_tensor,
+                    "P_freqs":P_freqs,
+                    "soft_freq_index":soft_freq_index,
+                    "soft_omega":soft_omega,
+                    "epoch":epoch_omega,
+                 }
+
+        torch.save(info, filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
 
     soft_omega=soft_freq_index*resolution*2*torch.pi
 

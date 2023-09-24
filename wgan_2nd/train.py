@@ -11,24 +11,6 @@ import numpy as np
 import time
 import torch.nn as nn
 from tqdm import tqdm
-class CustomDataset(Dataset):
-    def __init__(self, file_path):
-        # readt .pt
-        data = torch.load(file_path)
-        self.data = data['data']
-        self.label = data['label_csv']
-        self.length = len(self.data)
-
-    def __getitem__(self, index):
-        # get data&label
-        #label is a string of csv number
-        data = self.data[index]
-        label = self.label[index]
-        # pre-processing
-        return data, label
-
-    def __len__(self):
-        return self.length
 
 #set_default_dtype float64
 from torch.utils.data import Dataset

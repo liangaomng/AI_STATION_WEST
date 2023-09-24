@@ -4,6 +4,7 @@ from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
 from task1_compare_multi_argu import *
+
 def train_model(config):
     #调节记录的参数
     global global_variable_expr
