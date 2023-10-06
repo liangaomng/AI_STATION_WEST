@@ -1,5 +1,4 @@
 import utlis_2nd.utlis_funcs as uf
-import utlis_2nd.gan_nerual as gan_nerual
 
 import torch
 import torch.optim as optim
@@ -8,9 +7,8 @@ import os
 import numpy as np
 import time
 import torch.nn as nn
-import ot
-
-
+from geomloss import SamplesLoss
+import utlis_2nd.neural_base_class as nn_base
 class train_init():
     device = "cuda"
     def __init__(self,S_I,S_Omega,config,train_loader,valid_loader,test_loader,S_I_writer,S_Omega_writer):
@@ -19,29 +17,36 @@ class train_init():
         self.valid_loader=valid_loader
         self.test_loader=test_loader
 
+        #criterion
+
         self.criterion_inference = nn.MSELoss()
         self.criterion_ini = nn.MSELoss()
         self.criterion_grad = nn.MSELoss()
         self.criterion_fourier = nn.MSELoss()
+
         # loss list
+
         self.g_omega_freq_loss_list = []
         self.inference_loss_list = []
         self.ini_loss_list = []
         self.grad_loss_list = []
         self.fourier_loss_list = []
         self.mse_loss_list = []
+
         #size
+
         self.train_size=self.config["train_size"]
         self.valid_size=self.config["valid_size"]
+
         # prepare:data_t
+
         self.numpy_t = np.linspace(0, 2, 100)
         self.numpy_t = self.numpy_t.reshape(100, 1)
         self.data_t = torch.from_numpy(self.numpy_t).float().to(self.device)
         self.data_t = self.data_t.unsqueeze(0).expand(32, -1, 1)
+
         #writer
-        #omega_net_writer={"train_process":0,
-                  # "valid_process":0,
-                  # "model_checkpoint":0}#"train,valid,test,model_checkpoint"
+
         self.S_I_Writer=S_I_writer
         self.S_Omega_Writer=S_Omega_writer
         self.S_I =S_I
@@ -72,7 +77,7 @@ class train_init():
                 # real_data
                 real = batch_data[:, :, 7:9].to(device)
                 # real_condition[batch,200,2]
-                real_condition, _ = gan_nerual.convert_data(real, self.data_t, label, step=S_I_step)
+                real_condition, _ = nn_base.convert_data(real, self.data_t, label, step=S_I_step)
 
                 # omega_value
                 with torch.no_grad():
@@ -81,9 +86,8 @@ class train_init():
                 # generator_freq[batch,numbers,2]
                 generator_freq = generator_freq.reshape(-1, self.config["freq_numbers"], 2)
 
-
                 # compare the fourier domain's difference
-                real_freq = gan_nerual.compute_spectrum(real,
+                real_freq = nn_base.compute_spectrum(real,
                                                         beta=self.config["beta"],
                                                         domin_number=self.config["train_nomin"],
                                                         freq_number=self.config["freq_numbers"],
@@ -96,13 +100,13 @@ class train_init():
                 pred_coeffs = pred_coeffs.reshape(self.config["batch_size"], -1, 2)
 
                 if S_I_step == 1:
-                    left_matrix, symbol_matrix = gan_nerual.Get_basis_function_info(self.config['prior_knowledge'])
+                    left_matrix, symbol_matrix = nn_base.Get_basis_function_info(self.config['prior_knowledge'])
 
-                updated_symbol_list_z1, left_matrix, pred_data, pred_condition = gan_nerual.return_torch_version_matrix(
+                updated_symbol_list_z1, left_matrix, pred_data, pred_condition = nn_base.return_torch_version_matrix(
                     pred_coeffs,
                     generator_freq,
                     symbol_matrix)
-                pred_freq = gan_nerual.compute_spectrum(pred_data,
+                pred_freq = nn_base.compute_spectrum(pred_data,
                                                         beta=self.config["beta"],
                                                         freq_number=self.config["freq_numbers"],
                                                         train_step=S_I_step,
@@ -157,7 +161,7 @@ class train_init():
             if epoch % 100 == 0:
                 checkpoint = {
                     "epoch": epoch,
-                    "S_I_model_state_dict": self.S_I.state_dict(),
+                    "S_I_model_state_dict": self.S_I.module.state_dict(),
                     'S_Omega_optimizer_state_dict': self.S_I_optimizer.state_dict(),
                     "loss": epoch_inference_loss,
                 }
@@ -187,7 +191,7 @@ class train_init():
                 label = label.to("cuda")
 
                 # real_condition[batch,200,2]
-                real_condition, _ = gan_nerual.convert_data(real, self.data_t, label, step=S_Omega_step)
+                real_condition, _ = nn_base.convert_data(real, self.data_t, label, step=S_Omega_step)
 
                 # omega_value
                 generator_freq = self.S_Omega(real_condition)
@@ -196,14 +200,13 @@ class train_init():
                 generator_freq = generator_freq.reshape(-1, self.config["freq_numbers"], 2)
 
                 # compare the fourier domain's difference
-                real_freq = gan_nerual.compute_spectrum(real,
+                real_freq = nn_base.compute_spectrum(real,
                                                         beta=self.config["beta"],
                                                         freq_number=self.config["freq_numbers"],
                                                         domin_number=self.config["train_nomin"],
                                                         train_step=S_Omega_step,
                                                         filepath=self.S_Omega_Writer["train_analysis_file"],
-                                                        name="real_data")
-
+                                                        name="real_data",label_save=label)
 
                 # g_omega_loss
                 g_omega_freq_loss = self.criterion_fourier(generator_freq, real_freq)
@@ -217,31 +220,34 @@ class train_init():
 
             final_time = time.time()
             epoch_g_omega_freq_loss = sum(self.g_omega_freq_loss_list) / len(self.g_omega_freq_loss_list)
+            print("***epoch",epoch)
             self.S_Omega_Writer[process_name].add_scalar(process_name, epoch_g_omega_freq_loss, epoch)
             self.g_omega_freq_loss_list = []
             print(f"loss{epoch_g_omega_freq_loss.item()}" + f"_epoch{epoch}---" + "epoch_time" + \
                   f"{final_time - start_time}", flush=True)
-            # #every 100epoch save the checkpoint
+            # #every 100 epoch save the checkpoint
             if epoch % 100 == 0:
                 checkpoint = {
                     "epoch": epoch,
-                    "S_Omega_model_state_dict": self.S_Omega.state_dict(),
+                    "S_Omega_model_state_dict": self.S_Omega.module.state_dict(),
                     'S_Omega_optimizer_state_dict': self.S_Omega_optimizer.state_dict(),
                     "loss": epoch_g_omega_freq_loss,
                 }
                 torch.save(checkpoint, self.S_Omega_Writer["model_checkpoint_path"])
 
             with torch.no_grad():
-
-                eval_mse_value,u_stat=self.eval_omega_model(eval_data=self.valid_loader,
+                eval_mse_value,u_stat,eval_mae=self.eval_omega_model(eval_data=self.valid_loader,
                                  eval_epoch=epoch,name="valid_process")
-        return eval_mse_value,u_stat
+        return eval_mse_value,u_stat,eval_mae
+
+
 
     def eval_inference_model(self, eval_data,eval_epoch,name="valid_process"):
         '''
 
-        :return: value of eval_data_loss' mse
+        :return: value of eval dict
         '''
+        eval_sinkhorn_loss = SamplesLoss("sinkhorn", p=2, blur=0.05)
         device = "cuda"
         analysis_name=0
         if(name=="valid_process"):
@@ -256,16 +262,20 @@ class train_init():
         eval_u_stat_freq_list = []
         eval_u_stat_data_list = []
         eval_u_stat_grad_list = []
-        eval_infinite_cost_list = []
+        eval_sinkhorn_data_list = []
+        eval_sinkhorn_grad_list = []
+        eval_sinkhorn_fouier_list = []
+        eval_mae_list=[]
         for i, (batch_data, label) in enumerate(eval_data):
             S_I_eval_step += 1
             # get the condition_data and data_t and dict_str_solu
             # real_data
             real = batch_data[:, :, 7:9].to(device)
+            label= label.to(device)
             # real_condition[batch,200,2]
-            real_condition, _ = gan_nerual.convert_data(real, self.data_t, label, step=S_I_eval_step)
+            real_condition, _ = nn_base.convert_data(real, self.data_t, label, step=S_I_eval_step)
             if S_I_eval_step == 1:
-                left_matrix, symbol_matrix = gan_nerual.Get_basis_function_info(self.config['prior_knowledge'])
+                left_matrix, symbol_matrix = nn_base.Get_basis_function_info(self.config['prior_knowledge'])
             # omega_value
             with torch.no_grad():
                 generator_freq = self.S_Omega(real_condition)
@@ -276,25 +286,25 @@ class train_init():
             # inference loss
             pred_coeffs = self.S_I(real_condition)
             pred_coeffs = pred_coeffs.reshape(-1, (2 * self.config["freq_numbers"] + 1), 2)
-            updated_symbol_list, left_matrix, pred_data, pred_condition = gan_nerual.return_torch_version_matrix(
+            updated_symbol_list, left_matrix, pred_data, pred_condition = nn_base.return_torch_version_matrix(
                 pred_coeffs,
                 generator_freq,
                 symbol_matrix
             )
-            real_freq = gan_nerual.compute_spectrum(real,
+            real_freq = nn_base.compute_spectrum(real,
                                                     beta=self.config["beta"],
                                                     domin_number=self.config["valid_nomin"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=S_I_eval_step,
                                                     filepath=self.S_I_Writer[analysis_name],
-                                                    name=name+"real_data")
-            pred_freq = gan_nerual.compute_spectrum(pred_data,
+                                                    name=name+"real_data",label_save=label)
+            pred_freq = nn_base.compute_spectrum(pred_data,
                                                     beta=self.config["beta"],
                                                     domin_number=self.config["valid_nomin"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=S_I_eval_step,
                                                     filepath=self.S_I_Writer[analysis_name],
-                                                    name=name+"pred_data")
+                                                    name=name+"pred_data",label_save=label)
 
             # g_omega_loss
             g_omega_freq_loss = criterion_fourier(pred_freq, real_freq)
@@ -312,12 +322,21 @@ class train_init():
             eval_u_stat_freq_list.append(u_stat_freq)
             eval_u_stat_data_list.append(u_stat_data)
             eval_u_stat_grad_list.append(u_stat_condition)
-            # cost_matirx infinite_norm
+            # [batch]-numbers sinkhorn distance
+            data_sinkhorn=torch.mean(eval_sinkhorn_loss(real,pred_data))
+            eval_sinkhorn_data_list.append(data_sinkhorn)
 
-        cost_matrix = uf.cost_matrix(real,pred_data)  # [batch,50,50,2]
-        infinite_norm = [uf.infinity_norm(cost_matrix[i]) for i in range(cost_matrix.shape[0])]
-        infinite_norm_avr = np.mean(infinite_norm)
-        eval_infinite_cost_list.append(infinite_norm_avr)
+            grad_sinkhorn=torch.mean(eval_sinkhorn_loss(real_condition[:,100:,:],pred_condition[:,100:,:]))
+            eval_sinkhorn_grad_list.append(grad_sinkhorn)
+
+            fourier_sinkhorn=torch.mean(eval_sinkhorn_loss(real_freq,pred_freq))
+            eval_sinkhorn_fouier_list.append(fourier_sinkhorn)
+
+            #eval mae data
+            eval_mae_list.append(nn.L1Loss()(pred_data,real))
+
+
+
 
         eval_freq_loss = sum(eval_freq_loss_list) / len(eval_freq_loss_list)
         eval_data_loss = sum(eval_data_loss_list) / len(eval_data_loss_list)
@@ -325,18 +344,36 @@ class train_init():
         eval_u_stat_freq = sum(eval_u_stat_freq_list) / len(eval_u_stat_freq_list)
         eval_u_stat_data = sum(eval_u_stat_data_list) / len(eval_u_stat_data_list)
         eval_u_stat_grad = sum(eval_u_stat_grad_list) / len(eval_u_stat_grad_list)
-        eval_infinite_cost = sum(eval_infinite_cost_list) / len(eval_infinite_cost_list)
+        eval_sinkhorn_data=sum(eval_sinkhorn_data_list)/len(eval_sinkhorn_data_list)
+        eval_sinkhorn_grad=sum(eval_sinkhorn_grad_list)/len(eval_sinkhorn_grad_list)
+        eval_sinkhorn_fouier=sum(eval_sinkhorn_fouier_list)/len(eval_sinkhorn_fouier_list)
+        eval_mae=sum(eval_mae_list)/len(eval_mae_list)
 
         # save the eval result
-        self.S_I_Writer[name].add_scalars(name, {'eval_freq_loss': eval_freq_loss,
+        self.S_I_Writer[name].add_scalars(name, { 'eval_freq_loss': eval_freq_loss,
                                                    'eval_data_loss': eval_data_loss,
                                                    'eval_grad_loss': eval_grad_loss,
                                                    'eval_u_stat_freq': eval_u_stat_freq,
                                                    'eval_u_stat_data': eval_u_stat_data,
                                                    'eval_u_stat_grad': eval_u_stat_grad,
-                                                   'eval_infinite_cost': eval_infinite_cost
+                                                    'eval_sinkhorn_data':eval_sinkhorn_data,
+                                                    'eval_sinkhorn_grad':eval_sinkhorn_grad,
+                                                    'eval_sinkhorn_fouier':eval_sinkhorn_fouier,
+                                                    'eval_mae':eval_mae
                                                    }, eval_epoch)
-        return eval_data_loss
+
+        return_dict= {                             'eval_freq_loss': eval_freq_loss,
+                                                   'eval_data_loss': eval_data_loss,
+                                                   'eval_grad_loss': eval_grad_loss,
+                                                   'eval_u_stat_freq': eval_u_stat_freq,
+                                                   'eval_u_stat_data': eval_u_stat_data,
+                                                   'eval_u_stat_grad': eval_u_stat_grad,
+                                                    'eval_sinkhorn_data':eval_sinkhorn_data,
+                                                    'eval_sinkhorn_grad':eval_sinkhorn_grad,
+                                                    'eval_sinkhorn_fouier':eval_sinkhorn_fouier,
+                                                    'eval_mae':eval_mae
+                                                   }
+        return return_dict
 
     def eval_omega_model(self,eval_data,eval_epoch,name="valid_process"):
         '''
@@ -355,6 +392,7 @@ class train_init():
         criterion_fourier = nn.MSELoss()
         eval_mse_loss_list = []
         eval_u_stat_list = []
+        eval_mae_loss_list=[]
 
         for i, (batch_data, label) in enumerate(eval_data):
             eval_step = eval_step + 1
@@ -363,8 +401,10 @@ class train_init():
             # real_data
             real = batch_data[:, :, 7:9].to(device)
 
+            label= label.to(device)
+
             # real_condition[batch,200,2]
-            real_condition, _ = gan_nerual.convert_data(real,self.data_t, label, step=eval_step)
+            real_condition, _ = nn_base.convert_data(real,self.data_t, label, step=eval_step)
 
             # omega_value
             pred_freq = self.S_Omega(real_condition)
@@ -383,27 +423,32 @@ class train_init():
 
             # compare the fourier domain's difference
 
-            real_freq = gan_nerual.compute_spectrum(real,
+            real_freq = nn_base.compute_spectrum(real,
                                                     beta=self.config["beta"],
                                                     domin_number=self.config["valid_nomin"],
                                                     freq_number=self.config["freq_numbers"],
                                                     train_step=eval_step,
                                                     filepath=self.S_Omega_Writer[analysis_name],
-                                                    name=name+"real_data")
+                                                    name=name+"real_data",label_save=label)
 
-            # g_omega_loss
+            # mse
             g_omega_freq_loss = criterion_fourier(pred_freq, real_freq)
             eval_mse_loss_list.append(g_omega_freq_loss)
             # u_stat
             u_stat = uf.theil_u_statistic(pred_freq, real_freq)
             eval_u_stat_list.append(u_stat)
+            #mae -freq
+
+            eval_mae_loss_list.append(nn.L1Loss()(pred_freq,real_freq))
 
         eval_mse_loss = sum(eval_mse_loss_list) / len(eval_mse_loss_list)
         eval_u = sum(eval_u_stat_list) / len(eval_u_stat_list)
+        eval_mae= sum(eval_mae_loss_list)/len(eval_mae_loss_list)
 
 
         self.S_Omega_Writer[name].add_scalars(name, {
                                                 "mse_loss": eval_mse_loss,
                                                 "u_stat": eval_u,
+                                                "mae_loss":eval_mae,
                                                 }, eval_epoch)
-        return eval_mse_loss,eval_u
+        return eval_mse_loss,eval_u,eval_mae

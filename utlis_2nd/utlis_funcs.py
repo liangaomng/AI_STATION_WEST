@@ -8,6 +8,8 @@ import cv2
 import os
 from natsort import natsorted
 import argparse
+import ot
+
 
 import utlis_2nd.gan_nerual as gan_nerual
 '''
@@ -618,7 +620,7 @@ def theil_u_statistic(y_true, y_pred):
     u_statistic = numerator / (denominator_1 + denominator_2)
 
     return u_statistic
-import ot
+
 import matplotlib.colors as mcolors
 matrix_step=0
 def cost_matrix(real,fake,sampling_hz=49.5):
@@ -641,7 +643,7 @@ def cost_matrix(real,fake,sampling_hz=49.5):
 
     real_spectrum = real_fft_result[:,index[0],:].cpu().detach().numpy()
     real_frequencies = P_real_freqs[index[0]]
-    fake_spectrum = fake_fft_result[:,index[0],:].cpu().detach().numpy()#[batch,50,2
+    fake_spectrum = fake_fft_result[:,index[0],:].cpu().detach().numpy()#[batch,50,2]
     fake_frequencies = P_fake_freqs[index[0]]
 
 
@@ -677,8 +679,6 @@ def cost_matrix(real,fake,sampling_hz=49.5):
     plt.tight_layout()
     plt.savefig("cost_matrix"+str(matrix_step)+".png")
     plt.close()
-
-
 
     return M
 def infinity_norm(matrix):

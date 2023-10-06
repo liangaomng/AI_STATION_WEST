@@ -8,9 +8,6 @@ import torch
 import os
 from torch.utils.tensorboard import SummaryWriter
 import warnings
-import utlis_2nd.neural_base_class as nn_base
-
-device = 'cuda'
 
 warnings.filterwarnings("ignore")
 # set_default_dtype float64
@@ -18,7 +15,7 @@ torch.set_default_dtype(torch.float64)
 from utlis_2nd.cusdom import train_loader,valid_loader,test_loader
 #record expr_time：
 from datetime import datetime
-
+device = 'cuda'
 omega_net_writer = {"train_process": 0,
                     "valid_process": 0,
                     "test_process": 0,
@@ -26,14 +23,15 @@ omega_net_writer = {"train_process": 0,
                     "train_analysis_file": 0,
                     "valid_analysis_file": 0,
                     "test_analysis_file": 0}  # "train,valid,test,model_checkpoint"
-inference_net_writer = {    "train_process": 0,
+inference_net_writer = {"train_process": 0,
                             "valid_process": 0,
                             "test_process": 0,
                             "model_checkpoint_path": 0,
                             "train_analysis_file": 0,
                             "valid_analysis_file": 0,
                             "test_analysis_file": 0}  # "train,valid,test,model_checkpoint"
-expr_data_path_basis="/liangaoming/conda_lam/expriments/paper1/expr1/expr1_"
+#expr2********
+expr_data_path_basis="/liangaoming/conda_lam/expriments/paper1/expr2/expr2_"
 general_file_structure = {
     "train_process": expr_data_path_basis + "/train_process",
     "valid_process": expr_data_path_basis + "/valid_process",
@@ -55,11 +53,11 @@ config = {
     "lamba_gp": 1,
     "lamba_fourier": 1,
     "prior_knowledge": {"basis_1": "x**0", "basis_2": "sin", "basis_3": "cos"},
-    "S_I_lr": 1e-5,
+    "S_I_lr": 1e-4,
     "S_Omega_lr": 1e-4,
     "grads_types": {"boundary": 3, "inner": 5},  # boundary:forward and backward;inner:five points
     "beta": 2,
-    "freq_numbers": 51,
+    "freq_numbers": 1,
     # save path
     "expr_data_path": general_file_structure["train_process"],
     "CSV": general_file_structure["CSV"],
@@ -76,8 +74,8 @@ config = {
     "test_nomin": test_size / batch__size,
 
     "seed": 42,
-    "Omega_num_epoch": 6,
-    "Inference_num_epoch": 2,
+    "Omega_num_epoch": 5,
+    "Inference_num_epoch": 200,
     "co_train_time": 100,
     "infer_minimum": 1e-1,
 
@@ -85,6 +83,7 @@ config = {
     "valid_loader": valid_loader,
     "test_loader": test_loader,
     "current_expr_start_time": 0,
+    "omega_model_load_path":"/liangaoming/conda_lam/expriments/paper1/expr1/expr1_17_data/model_check_point/omega_net/omega_net_model.pth"
 
 }
 
@@ -92,7 +91,6 @@ def current2_time():
     current_time = datetime.now()
     current_start_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
     return current_start_time
-
 def record_init(folder_num):
     # record expr_time：
     current_time=current2_time()
@@ -128,9 +126,11 @@ def record_init(folder_num):
         if key == "test_analysis_file":
             path = general_file_structure[key] + "/omega_net" + "/analysis_files"
             omega_net_writer[key] = path
+
     for key in inference_net_writer.keys():
 
         path=general_file_structure[key]+"/inference_net"
+
         if key=="model_checkpoint_path":
             inference_net_writer[key]=path+"/inference_net_model.pth"
 
@@ -152,21 +152,22 @@ def record_init(folder_num):
     config["omega_net_writer"]=omega_net_writer
     config["inference_net_writer"]=inference_net_writer
     config["current_expr_start_time"]=current_time
-
 def train_omega_actor(co_train_actor):
     # set seed
     print("test_only_omega", flush=True)
     uf.set_seed(config["seed"])
     # train the model
-    eval_mse_value,eval_u_stat,eval_mae=co_train_actor.train_omega_neural()
-    return eval_mse_value, eval_u_stat,eval_mae
+    eval_mse_value,eval_u_stat=co_train_actor.train_omega_neural()
+    return eval_mse_value, eval_u_stat
 
 def train_inference_actor(co_train_actor):
     #set seed
-    print("test_only_inference", flush=True)
+    print("train_only_inference", flush=True)
     uf.set_seed(config["seed"])
     #train the model
-    co_train_actor.train_inference_neural()
+    EVAL_DICT=co_train_actor.train_inference_neural()
+    return EVAL_DICT
+
 
 def test_inference_model(co_train_actor):
     '''
@@ -183,7 +184,7 @@ def test_inference_model(co_train_actor):
         test_df=pd.DataFrame(test_dict,index=[0])
         test_df.to_csv(config["CSV"]+"/inference_final_result.csv",mode="a",header=True)
     return test_dict
-    print("tested inference done")
+    print("tested")#
 
 def test_omega_model(co_train_actor):
     '''
@@ -191,22 +192,29 @@ def test_omega_model(co_train_actor):
     :return: value and record
     '''
     test_epoch=1
-
     with torch.no_grad():
-        test_mse,u,test_mae=co_train_actor.eval_omega_model(eval_data=co_train_actor.test_loader,
+        test_mse,u=co_train_actor.eval_omega_model(eval_data=co_train_actor.test_loader,
                                                    eval_epoch=test_epoch,
                                                    name="test_process")
         #in the .csv
-        test_dict={"test_mse":test_mse.cpu().detach().numpy(),
-                   "u_stat":u.cpu().detach().numpy(),
-                   "test_mae":test_mae.cpu().detach().numpy()}
+        test_dict={"test_mse":test_mse.cpu().detach().numpy(),"u_stat":u.cpu().detach().numpy()}
         test_df=pd.DataFrame(test_dict,index=[0])
         test_df.to_csv(config["CSV"]+"/omega_final_result.csv",mode="a",header=True)
-    print("tested omega done")
-    return test_mse,u,test_mae
+    print("tested")
+    return test_mse,u
 
 
-def expr1(expr1_config):
+def expr2(expr1_config,**awgs):
+
+    """
+    :param expr1_config:
+    :param awgs: need_load_omgemodel:bool
+                 omega_load_path:str
+    :return: mse,u
+    """
+
+    need_load_omgemodel=awgs["need_load_omgemodel"]
+    omega_load_path=awgs["omega_load_path"]
 
     # set seed
     uf.set_seed(expr1_config["seed"])
@@ -215,21 +223,16 @@ def expr1(expr1_config):
     print("the prior knowledge is", expr1_config["prior_knowledge"], flush=True)
 
     #model_init
-    S_I = nn_base.Omgea_MLPwith_residual_dict(
-                                                input_dim=400,
-                                                hidden_dims=[512, 512, 512],
-                                                output_dim=(2 * expr1_config["freq_numbers"] + 1) * 2,
-                                                hidden_act="rational",
-                                                output_act="linear",
-                                                )
-    S_Omega = nn_base.Omgea_MLPwith_residual_dict(  input_dim=400,
-                                                    hidden_dims=[512, 512, 512],
-                                                    output_dim=expr1_config["freq_numbers"],
-                                                    hidden_act="rational",
-                                                    output_act="softmax",
-                                                    )
+    S_I = gan_nerual.Generator(input_dim=400,
+                               output_dim=(2 * expr1_config["freq_numbers"] + 1) * 2).to(device)
+    S_Omega = gan_nerual.omega_generator(input_dim=400,
+                                         output_dim=2 * expr1_config["freq_numbers"]).to(device)
+    S_Omega=torch.nn.DataParallel(S_Omega,device_ids=[0])
 
-
+    if need_load_omgemodel==True:
+        checkpoint = torch.load(omega_load_path)
+        S_Omega.load_state_dict(state_dict=checkpoint["S_Omega_model_state_dict"])
+        print("load_omega_model:SUCCESS")
     # get data
     co_train_actor = co_train.train_init(S_I, S_Omega, expr1_config, expr1_config["train_loader"],
                                          expr1_config["valid_loader"], expr1_config["test_loader"],
@@ -238,28 +241,28 @@ def expr1(expr1_config):
     co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
     co_train_actor.S_I = torch.nn.DataParallel(co_train_actor.S_I, device_ids=[0])
 
-    mse_value,u_stat,eval_mae=train_omega_actor(co_train_actor)
+    eval_Dict=train_inference_actor(co_train_actor)
     print("we have train and valid" )
-    test_omega_model(co_train_actor)
-    return mse_value,u_stat,eval_mae
+    test_inference_model(co_train_actor)
+    return eval_Dict
 
 import pandas as pd
 def save_config(config):
     config_save = pd.DataFrame.from_dict(config, orient='index')
-    if(os.path.exists(config["CSV"])==False):
-        os.mkdir(config["CSV"])
-        print("create the csv file")
-
+    print(config["CSV"])
     config_save.to_csv(config["CSV"]+ "/config.csv")
+
 
 if __name__ == '__main__':
 
     #save the config to the save
-    record_init(folder_num=0)
-    save_config(config)
-    expr1(expr1_config=config)
-    print("expr done")
+    record_init(folder_num=99)
 
+    save_config(config)
+
+    expr2(expr1_config=config,
+          need_load_omgemodel=True,
+          omega_load_path=config["omega_model_load_path"])
 
 
 

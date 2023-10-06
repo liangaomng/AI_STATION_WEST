@@ -1,5 +1,5 @@
 
-import super_learn_task_expr1 as task_expr1
+import super_learn_task_expr2 as task_expr1
 
 import ray
 from ray import tune
@@ -42,7 +42,7 @@ def copy_folder(src_folder,dest_folder):
         print(f"erro: {e}")
 
 import re
-folder_num=98
+folder_num=8
 
 def train_omega_model(config):
 
@@ -54,11 +54,9 @@ def train_omega_model(config):
     print(folder_num)
     #update
     task_expr1.config["seed"]=config["seed"]
-    task_expr1.config["S_Omega_lr"]=config["S_Omega_lr"]
-    task_expr1.config["Omega_num_epoch"]=config["omega_epochs"]
-    task_expr1.config["freq_num"]=config["freq_numbers"]
-    task_expr1.config["beta"]=config["beta"]
-    task_expr1.config["Omega_num_epoch"]=config["Omega_num_epoch"]
+
+    task_expr1.config["Inference_num_epoch"]=config["Inference_num_epoch"]
+
     #train
     print("folder_num:",folder_num)
     copy_folder_path=config["src_copy_path"]
@@ -67,16 +65,16 @@ def train_omega_model(config):
     #3 steps
     task_expr1.record_init(folder_num)
     task_expr1.save_config(task_expr1.config)
-    eval_mse_4omega,eval_u_stat_4omega,eval_mae=task_expr1.expr1(task_expr1.config)
+    dict=task_expr1.expr2(task_expr1.config,need_load_omgemodel=True,
+                                omega_load_path=task_expr1.config["omega_model_load_path"])
     #report
     result={
-              "eval_mse_4omega":eval_mse_4omega.cpu().detach().numpy(),
-              "eval_u_stat_4omega":eval_u_stat_4omega.cpu().detach().numpy(),
-               "eval_mae":eval_mae.cpu().detach().numpy(),
+              "eval_mse_4omega":0,
+              "eval_u_stat_4omega":0,
     }
     tune.report(**result)
 def custom_trial_str_creator(trial):
-    return f"{trial.trainable_name}"+"——expr1"
+    return f"{trial.trainable_name}"+"——expr2"
 
 
 if __name__ == "__main__":
@@ -87,11 +85,8 @@ if __name__ == "__main__":
     #space
     config_space = {
         "S_Omega_lr": task_expr1.config["S_Omega_lr"],#constant
-        "omega_epochs":task_expr1.config["Omega_num_epoch"], #constnt
-        "seed": tune.grid_search([1]),#grid search
-        "freq_numbers": tune.grid_search([1]),#grid search
-        "beta": tune.grid_search([1]),#grid search
-        "Omega_num_epoch": tune.grid_search([2000]),#grid search
+        "seed": tune.grid_search([1,42,100]),#grid search
+        "Inference_num_epoch": tune.grid_search([5000]),#grid search
         "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_template_data",
 
     }
@@ -106,7 +101,7 @@ if __name__ == "__main__":
         trial_name_creator=custom_trial_str_creator,
         progress_reporter=reporter,
         local_dir="/liangaoming/conda_lam/expriments/paper1/expr1/tb_info/ray_expr1",
-        resources_per_trial={"cpu":4,"gpu":1}  # every trial uses one GPU
+        resources_per_trial={"cpu":8,"gpu":1}  # every trial uses one GPU
     )
   # result
     print("======================== Result =========================")
