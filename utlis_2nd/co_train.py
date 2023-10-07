@@ -22,7 +22,8 @@ class train_init():
         self.criterion_inference = nn.MSELoss()
         self.criterion_ini = nn.MSELoss()
         self.criterion_grad = nn.MSELoss()
-        self.criterion_fourier = nn.MSELoss()
+        self.criterion_fourier =  nn.KLDivLoss(reduction='batchmean')
+
 
         # loss list
 
@@ -194,22 +195,23 @@ class train_init():
                 real_condition, _ = nn_base.convert_data(real, self.data_t, label, step=S_Omega_step)
 
                 # omega_value
-                generator_freq = self.S_Omega(real_condition)
+                pred_freq = self.S_Omega(real_condition)
 
-                # generator_freq[batch,numbers,2]
-                generator_freq = generator_freq.reshape(-1, self.config["freq_numbers"], 2)
+
+                # generator_freq[batch,numbers,seq,2]
+                pred_freq = pred_freq.reshape(-1, self.config["freq_numbers"], 2)
 
                 # compare the fourier domain's difference
-                real_freq = nn_base.compute_spectrum(real,
-                                                        beta=self.config["beta"],
-                                                        freq_number=self.config["freq_numbers"],
+                real_freq,freq_index = nn_base.compute_spectrum_normlized(real,
                                                         domin_number=self.config["train_nomin"],
                                                         train_step=S_Omega_step,
                                                         filepath=self.S_Omega_Writer["train_analysis_file"],
                                                         name="real_data",label_save=label)
 
-                # g_omega_loss
-                g_omega_freq_loss = self.criterion_fourier(generator_freq, real_freq)
+                # g_omega_loss kl divergence
+                g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)
+
+
                 self.g_omega_freq_loss_list.append(g_omega_freq_loss)
 
                 # save for the data
@@ -255,7 +257,7 @@ class train_init():
         elif(name=="test_process"):
             analysis_name="test_analysis_file"
         S_I_eval_step = 0
-        criterion_fourier = nn.MSELoss()
+        criterion_fourier = nn.functional.kl_div(reduction="batchmean")
         eval_freq_loss_list = []
         eval_data_loss_list = []
         eval_grad_loss_list = []

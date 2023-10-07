@@ -36,6 +36,8 @@ valid_loader=DataLoader(valid_dataset,batch_size=256,shuffle=True,drop_last=True
 test_loader = DataLoader(test_dataset, batch_size=256, shuffle=True, drop_last=True, num_workers=4)
 batch__size=256
 
+print(train_loader.dataset[1][0].shape[0])
+
 
 
 

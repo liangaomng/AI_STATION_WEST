@@ -1,7 +1,6 @@
 #co-train
 
 import utlis_2nd.utlis_funcs as uf
-import utlis_2nd.gan_nerual as gan_nerual
 import utlis_2nd.co_train as co_train
 from utlis_2nd.cusdom import *
 import torch
@@ -85,6 +84,7 @@ config = {
     "valid_loader": valid_loader,
     "test_loader": test_loader,
     "current_expr_start_time": 0,
+    "data_length":train_loader.dataset[0][0].shape[0] #data length
 
 }
 
@@ -214,20 +214,23 @@ def expr1(expr1_config):
     print("start train_Supervised_learning", flush=True)
     print("the prior knowledge is", expr1_config["prior_knowledge"], flush=True)
 
+
     #model_init
-    S_I = nn_base.Omgea_MLPwith_residual_dict(
-                                                input_dim=400,
+    S_I = nn_base.Omgea_MLPwith_residual_dict( input_sample_lenth=expr1_config["data_length"],
                                                 hidden_dims=[512, 512, 512],
-                                                output_dim=(2 * expr1_config["freq_numbers"] + 1) * 2,
+                                                output_dim=1,
                                                 hidden_act="rational",
-                                                output_act="linear",
-                                                )
-    S_Omega = nn_base.Omgea_MLPwith_residual_dict(  input_dim=400,
+                                                output_act="softmax",
+                                                sample_vesting=2,
+                                              )
+
+    S_Omega = nn_base.Omgea_MLPwith_residual_dict( input_sample_lenth=expr1_config["data_length"],
                                                     hidden_dims=[512, 512, 512],
-                                                    output_dim=expr1_config["freq_numbers"],
+                                                    output_dim=1,
                                                     hidden_act="rational",
                                                     output_act="softmax",
-                                                    )
+                                                    sample_vesting=2,
+                                                 )
 
 
     # get data
@@ -255,7 +258,7 @@ def save_config(config):
 if __name__ == '__main__':
 
     #save the config to the save
-    record_init(folder_num=0)
+    record_init(folder_num=98)
     save_config(config)
     expr1(expr1_config=config)
     print("expr done")

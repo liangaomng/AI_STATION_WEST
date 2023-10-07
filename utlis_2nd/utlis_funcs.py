@@ -445,7 +445,7 @@ def read_real_str(label:torch.tensor):
     return real_str_list
 
 
-def five_point_stencil(data,dt):
+def five_point_stencil(data,dt)->torch.tensor:
     #
     h=dt
     central_diff = (-data[:, 4:, :] + 8 * data[:, 3:-1, :] - 8 * data[:, 1:-3, :] + data[:, :-4, :]) \
@@ -495,7 +495,8 @@ func:calcualte the diff of the data
 input:real_data:torch.tensor and type
 output:diff_grads:torch.tensor
 '''
-def calculate_diff_grads(real_data:torch.tensor,data_t:torch.tensor,
+def calculate_diff_grads(real_data:torch.tensor,
+                         data_t:torch.tensor,
                          type="center_diff",plt_show=False):
     '''
 

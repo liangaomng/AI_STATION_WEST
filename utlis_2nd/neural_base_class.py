@@ -8,6 +8,7 @@ import sympy as sp
 base class for neural_network
 '''
 
+
 class sReLU(torch.nn.Module):
     def __init__(self):
         super(sReLU, self).__init__()
@@ -258,14 +259,42 @@ class RoundWithPrecisionSTE(torch.autograd.Function):
 
 class Omgea_MLPwith_residual_dict(nn.Module):
 
-    def __init__(self, input_dim, hidden_dims, output_dim,hidden_act='rational',output_act='softmax'):
+    def __init__(self, input_sample_lenth,
+                 hidden_dims,
+                 output_dim,hidden_act='rational',output_act='softmax',
+                 sample_vesting=2,#unit （s）
+                 grad_order=1,#1 order default
+                 vari_number=2,
+                 ):
         super(Omgea_MLPwith_residual_dict, self).__init__()
 
+        self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
+        self.register_buffer('buffer_sample_length', torch.tensor(0)) #100
+        self.register_buffer('buffer_sample_rate', torch.tensor(0))#2s
+        self.register_buffer('buffer_delta_t', torch.tensor(grad_order))
+        self.register_buffer('buffer_freq_index', torch.tensor(0))#[0,...,50]
+        self.register_buffer('buffer_freq_numbers', torch.tensor(0))#0.02
+        self.register_buffer('buffer_vari_number', torch.tensor(vari_number))
+
+        # index of freq and numbers
+        self.buffer_sample_length=torch.tensor(input_sample_lenth)
+        self.buffer_delta_t = self.buffer_sample_time/(self.buffer_sample_length-1)
+        self.buffer_sample_rate = torch.reciprocal(self.buffer_delta_t)  #49.5h
+        self.buffer_freq_index = torch.fft.rfftfreq(self.buffer_sample_length, d=self.buffer_delta_t)
+        self.buffer_freq_numbers = torch.tensor(self.buffer_freq_index.shape[0])
+
+        if grad_order==1:
+            input_dim=self.buffer_sample_length*2*grad_order*vari_number
+        elif grad_order==0:
+            input_dim=self.buffer_sample_length*vari_number
+
+        output_dim=self.buffer_freq_numbers*output_dim
 
         self.layers = nn.ModuleDict({
             'input': nn.Linear(input_dim, hidden_dims[0]),
             'hidden': nn.ModuleList(),
-            'output': nn.Linear(hidden_dims[-1], output_dim),
+            'output': nn.Linear(hidden_dims[-1],output_dim),
+            'hidden_act': nn.ModuleList(),
 
         })
 
@@ -278,25 +307,87 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         elif output_act == 'round':
             self.output_act = RoundWithPrecisionSTE.apply()
 
-
         prev_dim=hidden_dims[0]
 
         for i, dim in enumerate(hidden_dims[1:]):
 
             self.layers['hidden'].append(nn.Linear(prev_dim, dim))
             if hidden_act == 'rational':
-                self.layers['act'].append(Rational())
+                self.layers['hidden_act'].append(Rational())
             elif hidden_act == 'learnable_phi':
-                self.layers['act'].append(phi_learnable_act())
+                self.layers['hidden_act'].append(phi_learnable_act())
             elif hidden_act=='phi_b_line':
-                self.layers['act'].append(phi_b_line())
+                self.layers['hidden_act'].append(phi_b_line())
             prev_dim = dim
 
+    def convert_data_2_cat_grad(self,tensor):
+        '''
+        :param tensor: [batch,sample_length,vari_number]
+        :return: [batch,order*sample_length,vari_number]
+        '''
+        batch,length,vari_number=tensor.shape
+
+        #calculate gradient
+        grad_tensor=uf.five_point_stencil(data=tensor,dt= self.buffer_delta_t)
+        cat_tensor=torch.cat([tensor,grad_tensor],dim=1)
+        return cat_tensor
+
+    def return_fft_spectrum(self,tensor,need_norm=True,vari_order=0,save_path=None,
+                            train_step=0,domin_number=32,label_save=0,name="real_data"):
+        '''
+
+        :param tensor: [batch,t_setp,vari_number],like [256,100,2]
+        need_vari_oder: 0 or 1
+        :return: [batch,magn,vari_number],like [256,51,2]
+        '''
+        batch,t_setp,vari_number=tensor.shape
+        #pick one vari
+        pick=tensor[:, :, vari_order]
+        #fft
+        fft_tensor=torch.fft.rfft(pick,n=self.buffer_sample_length.item(),
+                                 dim=1)
+        #abs
+        magn_tensor=torch.abs(fft_tensor) #[batch,51]
+
+        if save_path is not None:
+            # save for plot
+            if train_step % domin_number == 0:
+                epoch_omega = train_step / domin_number
+                info = {
+                    "raw_data": tensor,
+                    "freqs_magn": magn_tensor,
+                    "epoch": epoch_omega,
+                    "label_save": label_save
+                }
+
+                torch.save(info, save_path + "/" + name + "_" + f"{int(epoch_omega)}.pth")
+
+        if need_norm:
+            max=torch.max(magn_tensor,dim=1)[0]
+            print(max)
+            norm_magn_tensor=magn_tensor/max
+            return norm_magn_tensor
+        else:
+            return magn_tensor
+
+
+
+
+
     def forward(self, x):
+
+        '''
+        suppose we have time series data with 100 time steps in two variables
+        after convert data to [batch,2*t_step,2],hidden 2 is adding the one order-derivatiation to dim=1
+        :param x: [batch,2*t_step,2]
+        eg: return [batch,freq_num]
+        '''
+        x = torch.flatten(x, 1)
+
         x = self.layers['input'](x)
-        x = self.layers['act'][0](x)
+        x = self.layers['hidden_act'][0](x)
         residual = x
-        for i,(layer,act) in enumerate(zip(self.layers['hidden'],self.layers['act'][:])):
+        for i,(layer,act) in enumerate(zip(self.layers['hidden'],self.layers['hidden_act'][1:])):
             x = layer(x)
             x = act(x)
             x += residual #resiual connection
@@ -305,7 +396,27 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         x = self.layers['output'](x)
         #softmax -to prob
         x = self.output_act(x)
+        print(x.shape)
+        x = x.view(-1,self.buffer_freq_numbers.item())
         return x
+
+    def calculate_entropy(self,prob_distributions,dim_default=1):
+        '''
+            input:prob_distributions:[batch,51]
+            return [batch,scalar]
+        '''
+
+        # ensure the sum of prob is 1
+        prob_distributions = F.normalize(prob_distributions, p=1.0, dim=dim_default)
+
+        # cal entropy scalar
+        # 1e-9 to prevent log(0)
+        entropies = -torch.sum(prob_distributions * torch.log2(prob_distributions + 1e-9), dim=dim_default)
+
+
+        return entropies
+
+
 
 
 '''
@@ -460,14 +571,13 @@ def Get_basis_function_info(dict,numbers=3):
     return left_matirx,symbol_matrix
 
 
-def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,step,eval=False):
+def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,eval=False):
     '''
      func:convert the data :1.pick the condition_data
                             2.calcul the gradient
                             3.label of txt number
      input: real_data:[batch,100,2]
             label:[batch]
-            step:scalar
             eval:bool,to choose if the function : uf.read_real_str(label)
      :return:    trans_condition[batch,101,2]
                  data_t[batch,100,1]
@@ -632,5 +742,55 @@ def compute_spectrum(data_tensor,sampling_rate=49.5,
 
     soft_omega=soft_freq_index*resolution*2*torch.pi
     return soft_omega
+def compute_spectrum_normlized(
+                     data_tensor,
+                     sampling_rate=49.5,
+                     domin_number=32,
+                     train_step=0,filepath=0,name="",
+                     label_save=0):
+
+
+    """
+    Perform FFT and return normalized frequency and magnitude.
+
+    Parameters:
+    - input_tensor: PyTorch tensor of shape [batch_size, time_steps, num_variables]
+
+    Returns:
+    - normalized_magnitude: Normalized magnitude for each frequency, shape [batch_size, num_frequencies, num_variables]
+    - freqs: Frequencies corresponding to each FFT output, shape [num_frequencies]
+    """
+    batch_size, time_steps, num_variables = data_tensor.shape
+
+    # Perform FFT
+    spectrum = torch.fft.rfft(data_tensor, dim=1)  # Shape: [batch_size, num_frequencies, num_variables, 2]
+
+    # Compute magnitude
+    magnitude = torch.abs(spectrum)  # Shape: [batch_size, num_frequencies, num_variables]
+
+    # Normalize
+    max_magnitude = torch.max(magnitude, dim=1, keepdim=True)[0]  # Shape: [batch_size, 1, num_variables]
+
+    normalized_magnitude = magnitude / max_magnitude  # Shape: [batch_size, num_frequencies, num_variables]
+
+    # Compute frequencies
+    freqs = torch.fft.rfftfreq(time_steps,d=1/sampling_rate)  # Shape: [num_frequencies]
+
+    #save for plot
+    if train_step % domin_number ==0:
+
+        epoch_omega=train_step/domin_number
+        info={
+                    "raw_data":data_tensor,
+                    "P_freqs":freqs,
+                    "epoch":epoch_omega,
+                    "label_save":label_save
+                 }
+
+        torch.save(info, filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
+
+    return normalized_magnitude, freqs
+
+
 
 
