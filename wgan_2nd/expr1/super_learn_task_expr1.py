@@ -10,12 +10,11 @@ import warnings
 import utlis_2nd.neural_base_class as nn_base
 
 device = 'cuda'
-
 warnings.filterwarnings("ignore")
-# set_default_dtype float64
+
 torch.set_default_dtype(torch.float64)
 from utlis_2nd.cusdom import train_loader,valid_loader,test_loader
-#record expr_time：
+
 from datetime import datetime
 
 omega_net_writer = {"train_process": 0,
@@ -84,6 +83,7 @@ config = {
     "valid_loader": valid_loader,
     "test_loader": test_loader,
     "current_expr_start_time": 0,
+
     "data_length":train_loader.dataset[0][0].shape[0] #data length
 
 }
@@ -206,36 +206,38 @@ def test_omega_model(co_train_actor):
     return test_mse,u,test_mae
 
 
-def expr1(expr1_config):
+def expr1(expr_config):
 
     # set seed
-    uf.set_seed(expr1_config["seed"])
+    uf.set_seed(expr_config["seed"])
 
     print("start train_Supervised_learning", flush=True)
-    print("the prior knowledge is", expr1_config["prior_knowledge"], flush=True)
+    print("the prior knowledge is", expr_config["prior_knowledge"], flush=True)
 
 
     #model_init
-    S_I = nn_base.Omgea_MLPwith_residual_dict( input_sample_lenth=expr1_config["data_length"],
-                                                hidden_dims=[512, 512, 512],
-                                                output_dim=1,
-                                                hidden_act="rational",
-                                                output_act="softmax",
-                                                sample_vesting=2,
-                                              )
+    S_I = nn_base.Omgea_MLPwith_residual_dict(     input_sample_lenth=expr_config["data_length"],
+                                                   hidden_dims=[512, 512, 512],
+                                                   output_coeff=True,
+                                                   hidden_act="rational",
+                                                   output_act="Identity",
+                                                   sample_vesting=2,
+                                                   vari_number=2
+                                             )
 
-    S_Omega = nn_base.Omgea_MLPwith_residual_dict( input_sample_lenth=expr1_config["data_length"],
-                                                    hidden_dims=[512, 512, 512],
-                                                    output_dim=1,
-                                                    hidden_act="rational",
-                                                    output_act="softmax",
-                                                    sample_vesting=2,
-                                                 )
 
+    S_Omega =nn_base.Omgea_MLPwith_residual_dict(  input_sample_lenth=expr_config["data_length"],
+                                                   hidden_dims=[512, 512, 512],
+                                                   output_coeff=False,
+                                                   hidden_act="rational",
+                                                   output_act="softmax",
+                                                   sample_vesting=2,
+                                                   vari_number=2
+                                                  )
 
     # get data
-    co_train_actor = co_train.train_init(S_I, S_Omega, expr1_config, expr1_config["train_loader"],
-                                         expr1_config["valid_loader"], expr1_config["test_loader"],
+    co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
+                                         expr_config["valid_loader"], expr_config["test_loader"],
                                          inference_net_writer,omega_net_writer)
     # dp the train
     co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])

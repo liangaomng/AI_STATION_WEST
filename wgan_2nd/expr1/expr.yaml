@@ -1,0 +1,10 @@
+#this is yaml file for expr1
+# expr.yaml
+{
+  'name': 'John Doe',
+  'age': 30,
+  'email': 'john.doe@example.com',
+  'is_student': False,
+  'courses': ['Math', 'Physics', 'Chemistry'],
+  'grades': {'Math': 'A', 'Physics': 'B', 'Chemistry': 'A'}
+}

@@ -8,6 +8,7 @@ import torch
 import os
 from torch.utils.tensorboard import SummaryWriter
 import warnings
+import utlis_2nd.neural_base_class as nn_base
 
 warnings.filterwarnings("ignore")
 # set_default_dtype float64
@@ -75,7 +76,7 @@ config = {
 
     "seed": 42,
     "Omega_num_epoch": 5,
-    "Inference_num_epoch": 200,
+    "Inference_num_epoch": 5000,
     "co_train_time": 100,
     "infer_minimum": 1e-1,
 
@@ -83,8 +84,9 @@ config = {
     "valid_loader": valid_loader,
     "test_loader": test_loader,
     "current_expr_start_time": 0,
-    "omega_model_load_path":"/liangaoming/conda_lam/expriments/paper1/expr1/expr1_17_data/model_check_point/omega_net/omega_net_model.pth"
+    "omega_model_load_path":"/liangaoming/conda_lam/expriments/paper1/expr1/expr1_98_data/model_check_point/omega_net/omega_net_model.pth",
 
+    "data_length":train_loader.dataset[0][0].shape[0]  # data length
 }
 
 def current2_time():
@@ -204,7 +206,7 @@ def test_omega_model(co_train_actor):
     return test_mse,u
 
 
-def expr2(expr1_config,**awgs):
+def expr2(expr_config,**awgs):
 
     """
     :param expr1_config:
@@ -213,56 +215,60 @@ def expr2(expr1_config,**awgs):
     :return: mse,u
     """
 
-    need_load_omgemodel=awgs["need_load_omgemodel"]
-    omega_load_path=awgs["omega_load_path"]
-
     # set seed
-    uf.set_seed(expr1_config["seed"])
+    uf.set_seed(expr_config["seed"])
 
     print("start train_Supervised_learning", flush=True)
-    print("the prior knowledge is", expr1_config["prior_knowledge"], flush=True)
+    print("the prior knowledge is", expr_config["prior_knowledge"], flush=True)
 
-    #model_init
-    S_I = gan_nerual.Generator(input_dim=400,
-                               output_dim=(2 * expr1_config["freq_numbers"] + 1) * 2).to(device)
-    S_Omega = gan_nerual.omega_generator(input_dim=400,
-                                         output_dim=2 * expr1_config["freq_numbers"]).to(device)
-    S_Omega=torch.nn.DataParallel(S_Omega,device_ids=[0])
+    # model_init
+    S_I = nn_base.Omgea_MLPwith_residual_dict(input_sample_lenth=expr_config["data_length"],
+                                              hidden_dims=[512, 512, 512],
+                                              output_coeff=True,
+                                              hidden_act="rational",
+                                              output_act="Identity",
+                                              sample_vesting=2,
+                                              vari_number=2
+                                              )
 
-    if need_load_omgemodel==True:
-        checkpoint = torch.load(omega_load_path)
-        S_Omega.load_state_dict(state_dict=checkpoint["S_Omega_model_state_dict"])
-        print("load_omega_model:SUCCESS")
+    S_Omega = nn_base.Omgea_MLPwith_residual_dict(input_sample_lenth=expr_config["data_length"],
+                                                  hidden_dims=[512, 512, 512],
+                                                  output_coeff=False,
+                                                  hidden_act="rational",
+                                                  output_act="softmax",
+                                                  sample_vesting=2,
+                                                  vari_number=2
+                                                  )
+
     # get data
-    co_train_actor = co_train.train_init(S_I, S_Omega, expr1_config, expr1_config["train_loader"],
-                                         expr1_config["valid_loader"], expr1_config["test_loader"],
-                                         inference_net_writer,omega_net_writer)
+    co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
+                                         expr_config["valid_loader"], expr_config["test_loader"],
+                                         inference_net_writer, omega_net_writer)
     # dp the train
     co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
     co_train_actor.S_I = torch.nn.DataParallel(co_train_actor.S_I, device_ids=[0])
-
     eval_Dict=train_inference_actor(co_train_actor)
     print("we have train and valid" )
     test_inference_model(co_train_actor)
     return eval_Dict
 
+
 import pandas as pd
 def save_config(config):
     config_save = pd.DataFrame.from_dict(config, orient='index')
-    print(config["CSV"])
-    config_save.to_csv(config["CSV"]+ "/config.csv")
+    if(os.path.exists(config["CSV"])==False):
+        os.mkdir(config["CSV"])
+        print("create the csv file")
 
+    config_save.to_csv(config["CSV"]+ "/config.csv")
 
 if __name__ == '__main__':
 
     #save the config to the save
-    record_init(folder_num=99)
-
+    record_init(folder_num=98)
     save_config(config)
-
-    expr2(expr1_config=config,
-          need_load_omgemodel=True,
-          omega_load_path=config["omega_model_load_path"])
+    expr2(expr_config=config)
+    print("expr done")
 
 
 
