@@ -92,7 +92,7 @@ if __name__ == "__main__":
         "freq_numbers": tune.grid_search([1]),#grid search
         "beta": tune.grid_search([1]),#grid search
         "Omega_num_epoch": tune.grid_search([2000]),#grid search
-        "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_template_data",
+        "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_1",
 
     }
    # reporter

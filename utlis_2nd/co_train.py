@@ -1,34 +1,23 @@
 import utlis_2nd.utlis_funcs as uf
-
 import torch
 import torch.optim as optim
-import os
-
-import numpy as np
 import time
 import torch.nn as nn
 from geomloss import SamplesLoss
-import utlis_2nd.neural_base_class as nn_base
 
-import matplotlib.pyplot as plt
 class train_init():
-    device = "cuda"
     def __init__(self,S_I,S_Omega,config,train_loader,valid_loader,test_loader,S_I_writer,S_Omega_writer):
         self.config=config
         self.train_loader=train_loader
         self.valid_loader=valid_loader
         self.test_loader=test_loader
-
         #criterion
-
         self.criterion_inference = nn.MSELoss()
         self.criterion_ini = nn.MSELoss()
         self.criterion_grad = nn.MSELoss()
         self.criterion_fourier =  nn.KLDivLoss(reduction='batchmean')
 
-
         # loss list
-
         self.g_omega_freq_loss_list = []
         self.inference_loss_list = []
         self.ini_loss_list = []

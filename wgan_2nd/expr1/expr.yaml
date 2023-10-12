@@ -1,10 +1,13 @@
 #this is yaml file for expr1
-# expr.yaml
+# expr1.yaml
 {
-  'name': 'John Doe',
-  'age': 30,
-  'email': 'john.doe@example.com',
-  'is_student': False,
-  'courses': ['Math', 'Physics', 'Chemistry'],
-  'grades': {'Math': 'A', 'Physics': 'B', 'Chemistry': 'A'}
+  'expr_name': 'expr1',
+  'type': "supervised_learning",
+  'train_size_percent': 0.8,
+  'valid_size_percent': 0.1,
+  'test_size_percent': 0.1,
+  'batch_size': 256,
+  'seed':42,
+  'all_solus_numbers':None,
+  "data_length":None
 }

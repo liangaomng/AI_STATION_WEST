@@ -87,7 +87,7 @@ if __name__ == "__main__":
         "S_Omega_lr": task_expr1.config["S_Omega_lr"],#constant
         "seed": tune.grid_search([1,42,100]),#grid search
         "Inference_num_epoch": tune.grid_search([5000]),#grid search
-        "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_template_data",
+        "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_1",
 
     }
    # reporter

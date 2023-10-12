@@ -1,0 +1,31 @@
+,0
+batch_size,256
+hidden_nueral_dims,"[512, 512, 512]"
+all_data_save_path,"{'train_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/train_process', 'valid_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/valid_process', 'test_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/test_process', 'model_checkpoint_path': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/model_check_point', 'CSV': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/csv', 'tb_event': '/tb_event', 'train_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/train_process', 'valid_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/valid_process', 'test_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/test_process'}"
+lamba_ini,1
+lamba_grad,1
+lamba_gp,1
+lamba_fourier,1
+prior_knowledge,"{'basis_1': 'x**0', 'basis_2': 'sin', 'basis_3': 'cos'}"
+S_I_lr,1e-05
+S_Omega_lr,0.0001
+grads_types,"{'boundary': 3, 'inner': 5}"
+beta,2
+freq_numbers,51
+expr_data_path,wgan_2nd/expr1/expr1_results97_data
+CSV,wgan_2nd/expr1/expr1_results97_data/csv
+tb_event,/tb_event
+omega_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2b2563430>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2b2869120>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2b26559f0>, 'model_checkpoint_path': 'wgan_2nd/expr1/expr1_results97_data/model_check_point/omega_net/omega_net_model.pth', 'train_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/train_process/omega_net/analysis_files', 'valid_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/valid_process/omega_net/analysis_files', 'test_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/test_process/omega_net/analysis_files'}"
+inference_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x1735f9180>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x1735fa020>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x173711030>, 'model_checkpoint_path': 'wgan_2nd/expr1/expr1_results97_data/model_check_point/inference_net/inference_net_model.pth', 'train_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/train_process/inference_net/analysis_files', 'valid_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/valid_process/inference_net/analysis_files', 'test_analysis_file': 'wgan_2nd/expr1/expr1_results97_data/test_process/omega_net/analysis_files'}"
+train_nomin,32
+valid_nomin,4
+test_nomin,4
+seed,42
+Omega_num_epoch,6
+Inference_num_epoch,2
+infer_minimum,0.1
+train_loader,
+valid_loader,
+test_loader,
+current_expr_start_time,2023-10-12 15:43:52
+data_length,100

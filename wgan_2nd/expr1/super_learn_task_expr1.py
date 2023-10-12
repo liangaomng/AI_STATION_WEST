@@ -8,15 +8,9 @@ import os
 from torch.utils.tensorboard import SummaryWriter
 import warnings
 import utlis_2nd.neural_base_class as nn_base
-
-device = 'cuda'
 warnings.filterwarnings("ignore")
-
 torch.set_default_dtype(torch.float64)
-from utlis_2nd.cusdom import train_loader,valid_loader,test_loader
-
 from datetime import datetime
-
 omega_net_writer = {"train_process": 0,
                     "valid_process": 0,
                     "test_process": 0,
@@ -43,10 +37,11 @@ general_file_structure = {
     "valid_analysis_file": expr_data_path_basis + "/valid_process",
     "test_analysis_file": expr_data_path_basis + "/test_process",
 }
+
 config = {
     # basis
     "batch_size": 256,
-    "g_neural_network_width": 512,
+    "hidden_nueral_dims": [512, 512, 512],
     "all_data_save_path": general_file_structure,
     "lamba_ini": 1,
     "lamba_grad": 1,
@@ -56,7 +51,7 @@ config = {
     "S_I_lr": 1e-5,
     "S_Omega_lr": 1e-4,
     "grads_types": {"boundary": 3, "inner": 5},  # boundary:forward and backward;inner:five points
-    "beta": 2,
+    "beta": 2,#temperature
     "freq_numbers": 51,
     # save path
     "expr_data_path": general_file_structure["train_process"],
@@ -65,38 +60,35 @@ config = {
     # writer
     "omega_net_writer": omega_net_writer,
     "inference_net_writer": inference_net_writer,
-    "train_size": train_size,
-    "valid_size": valid_size,
-    "test_size": test_size,
-
-    "train_nomin": train_size / batch__size,
-    "valid_nomin": valid_size / batch__size,
-    "test_nomin": test_size / batch__size,
+    #size of train
+    "train_nomin": None,#train_size / batch_size,
+    "valid_nomin": None,#valid_size / batch_size,
+    "test_nomin": None,#test_size / batch_size,
 
     "seed": 42,
     "Omega_num_epoch": 6,
     "Inference_num_epoch": 2,
-    "co_train_time": 100,
     "infer_minimum": 1e-1,
 
-    "train_loader": train_loader,
-    "valid_loader": valid_loader,
-    "test_loader": test_loader,
+    "train_loader": None,
+    "valid_loader": None,
+    "test_loader": None,
     "current_expr_start_time": 0,
-
-    "data_length":train_loader.dataset[0][0].shape[0] #data length
+    "data_length":None #t_steps
 
 }
+
+
 
 def current2_time():
     current_time = datetime.now()
     current_start_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
     return current_start_time
 
-def record_init(folder_num):
+def record_init(folder_num,expr_data_path_new):
     # record expr_time：
     current_time=current2_time()
-    expr_data_path = expr_data_path_basis+ f"{folder_num}"+"_data"
+    expr_data_path = expr_data_path_new+ f"{folder_num}"+"_data"
     # define the structure
     global general_file_structure
     general_file_structure ={
@@ -177,8 +169,8 @@ def test_inference_model(co_train_actor):
 
     with torch.no_grad():
         test_dict=co_train_actor.eval_inference_model(eval_data=co_train_actor.test_loader,
-                                                   eval_epoch=test_epoch,
-                                                   name="test_process")
+                                                        eval_epoch=test_epoch,
+                                                        name="test_process")
         #in the .csv
         test_df=pd.DataFrame(test_dict,index=[0])
         test_df.to_csv(config["CSV"]+"/inference_final_result.csv",mode="a",header=True)
@@ -206,7 +198,7 @@ def test_omega_model(co_train_actor):
     return test_mse,u,test_mae
 
 
-def expr1(expr_config):
+def expr(expr_config):
 
     # set seed
     uf.set_seed(expr_config["seed"])
@@ -257,13 +249,25 @@ def save_config(config):
 
     config_save.to_csv(config["CSV"]+ "/config.csv")
 
-if __name__ == '__main__':
+def train_omgea(results_save_path=None,folder_num=None,train_config=None):
+    '''
+    :param
+        1.path:str
+        2.folder_num: the folder number-int
+        3.train_config: the config of the train -dict
 
+    :return: none
+    '''
     #save the config to the save
-    record_init(folder_num=98)
-    save_config(config)
-    expr1(expr1_config=config)
+
+    record_init(folder_num=folder_num,expr_data_path_new=results_save_path)
+    save_config(train_config)
+    expr(expr_config=train_config)
     print("expr done")
+
+
+if __name__ == '__main__':
+    train_omgea()
 
 
 
