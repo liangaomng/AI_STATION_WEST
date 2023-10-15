@@ -1,0 +1,14 @@
+#this is yaml file for expr1
+# expr1.yaml
+{
+  'expr_name': 'expr1',
+  'type': "supervised_learning",
+  'train_size_percent': 0.8,
+  'valid_size_percent': 0.1,
+  'test_size_percent': 0.1,
+  'batch_size': 256,
+  'seed':42,
+  'all_solus_numbers':None,
+  "data_length":None,
+  "vari_number":2
+}

@@ -1,10 +1,12 @@
+import numpy as np
+
 import utlis_2nd.utlis_funcs as uf
 import torch
 import torch.optim as optim
 import time
 import torch.nn as nn
 from geomloss import SamplesLoss
-
+import matplotlib.pyplot as plt
 class train_init():
     def __init__(self,S_I,S_Omega,config,train_loader,valid_loader,test_loader,S_I_writer,S_Omega_writer):
         self.config=config
@@ -25,9 +27,6 @@ class train_init():
         self.fourier_loss_list = []
         self.mse_loss_list = []
 
-        #size
-        self.train_size=self.config["train_size"]
-        self.valid_size=self.config["valid_size"]
 
         #writer
         self.S_I_Writer=S_I_writer
@@ -41,14 +40,17 @@ class train_init():
         self.beta = self.config["beta"]
         self.freq_numbers = self.config["freq_numbers"]
 
-    def train_inference_neural(self,process_name="train_process"):
+    def train_inference_neural(self,
+                               process_name="train_process",
+                               device="cuda",
+                               save_2visualfig=True):
         '''
         train the inference neural network
         return eval_value
         '''
         print("start train_inference")
         S_I_step = 0
-        device = "cuda"
+
         #
         for epoch in range(self.I_num_epoch):
 
@@ -61,22 +63,38 @@ class train_init():
                 real = batch_data[:, :, 7:9].to(device)
 
                 # omega_value
-                with torch.no_grad():
-                    self.S_Omega.eval()
-                    pretain_freq_distrubtion = self.S_Omega(real) #[batch,freq_index,2]
+                # with torch.no_grad():
+                #     self.S_Omega.eval()
+                        #pretain_freq_distrubtion = self.S_Omega(real) #[batch,freq_index,2]
 
                 # compare the fourier domain's difference
-                real_freq_distrubtion  = self.S_I.module.return_fft_spectrum(real,need_norm=True)
+                real_freq_distrubtion  = self.S_I.return_fft_spectrum(real,need_norm=True)
 
                 # inference loss
                 pred_coeffs = self.S_I(real) #[batch,freq_index*2,2]
+                #print("pred_coeff",pred_coeffs.shape) #[batch,freq_index*1,2]
+                #
+                # print("pretain_freq_distrubtion", pretain_freq_distrubtion.shape)#[batch,freq_index*1,2]
+                #
+                # #plot the freq distrubtion
 
-                left_matrix,pred_data=self.S_I.module.return_pred_data(pred_coeffs,pretain_freq_distrubtion)
 
 
-                pred_freq_distrubtion = self.S_I.module.return_fft_spectrum(pred_data,need_norm=True)
+                left_matrix,pred_data=self.S_I.return_pred_data(pred_coeffs,real_freq_distrubtion)
+                pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data,need_norm=True)
 
-                # save for the data---PINN
+                if(save_2visualfig==True):
+                    #plot the freq distribution and the
+                    fig,ax=plt.subplots(2,1)
+                    ax[0].plot(np.linspace(0,50,51),pred_freq_distrubtion[0, :, 0].cpu().detach().numpy(), label="pred_freq_distrubtion")
+                    ax[0].plot(np.linspace(0,50,51),real_freq_distrubtion[0, :, 0].cpu().detach().numpy(), label="real_freq_distrubtion")
+                    ax[1].plot(np.linspace(0,2,100),pred_data[0, :, 0].cpu().detach().numpy(), label="pred_data")
+                    ax[0].legend()
+                    ax[1].legend()
+
+
+
+                # save for the data-visualization
                 mse_loss = self.criterion_inference(pred_data, real)
                 self.mse_loss_list.append(mse_loss)
                 fouier_loss = self.criterion_fourier(pred_freq_distrubtion, real_freq_distrubtion)
@@ -89,6 +107,7 @@ class train_init():
                 # loss
                 infer_loss.backward()
                 self.S_I_optimizer.step()
+
 
             final_time = time.time()
 
@@ -112,7 +131,7 @@ class train_init():
             if epoch % 100 == 0:
                 checkpoint = {
                     "epoch": epoch,
-                    "S_I_model_state_dict": self.S_I.module.state_dict(),
+                    "S_I_model_state_dict": self.S_I.state_dict(),
                     'S_Omega_optimizer_state_dict': self.S_I_optimizer.state_dict(),
                     "loss": epoch_inference_loss,
                 }
@@ -122,7 +141,9 @@ class train_init():
         return eval_value
 
 
-    def train_omega_neural(self,process_name="train_process"):
+    def train_omega_neural(self,
+                           process_name="train_process",
+                           device="cuda"):
         # train the omega neural network
         '''
         return:value of mse
@@ -138,16 +159,16 @@ class train_init():
                 # get the condition_data and data_t and dict_str_solu
 
                 # real_data [batch,seq,2]
-                real = batch_data[:, :, 7:9].to("cuda")
-                label = label.to("cuda")
+                real = batch_data[:, :, 7:9].to(device)
+                label = label
 
 
                 # return [batch,freq_index,2]
                 pred_freq = self.S_Omega(real)
 
                 # compare the real fourier domain's difference
-                #*** problem
-                real_freq= self.S_Omega.module.return_fft_spectrum(real,need_norm=True)
+                #*** problem  if datapara :self.S_Omega.module.return_fft_spectrum(
+                real_freq= self.S_Omega.return_fft_spectrum(real,need_norm=True)
 
                 # g_omega_loss kl divergence
                 g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)
@@ -170,7 +191,7 @@ class train_init():
             if epoch % 100 == 0:
                 checkpoint = {
                     "epoch": epoch,
-                    "S_Omega_model_state_dict": self.S_Omega.module.state_dict(),
+                    "S_Omega_model_state_dict": self.S_Omega.state_dict(),
                     'S_Omega_optimizer_state_dict': self.S_Omega_optimizer.state_dict(),
                     "loss": epoch_g_omega_freq_loss,
                 }
@@ -189,7 +210,6 @@ class train_init():
         :return: value of eval dict
         '''
         eval_sinkhorn_loss = SamplesLoss("sinkhorn", p=2, blur=0.05)
-        device = "cuda"
         analysis_name=0
         if(name=="valid_process"):
             analysis_name="valid_analysis_file"
@@ -206,8 +226,7 @@ class train_init():
             S_I_eval_step += 1
             # get the condition_data and data_t and dict_str_solu
             # real_data
-            real = batch_data[:, :, 7:9].to(device)
-            label= label.to(device)
+            real = batch_data[:, :, 7:9]
 
             # omega_value
             with torch.no_grad():
@@ -215,13 +234,13 @@ class train_init():
                 pretain_freq_distrubtion = self.S_Omega(real)  # [batch,freq_index,2]
 
             # compare the fourier domain's difference
-            real_freq_distrubtion = self.S_I.module.return_fft_spectrum(real, need_norm=True)
+            real_freq_distrubtion = self.S_I.return_fft_spectrum(real, need_norm=True)
 
             # inference loss
             pred_coeffs = self.S_I(real)  # [batch,freq_index*2,2]
-            left_matrix,pred_data = self.S_I.module.return_pred_data(pred_coeffs, pretain_freq_distrubtion)
+            left_matrix,pred_data = self.S_I.return_pred_data(pred_coeffs, pretain_freq_distrubtion)
 
-            pred_freq_distrubtion = self.S_I.module.return_fft_spectrum(pred_data, need_norm=True)
+            pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data, need_norm=True)
 
             # g_omega_loss
             g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion, real_freq_distrubtion)
@@ -229,6 +248,7 @@ class train_init():
             # data_loss
             data_loss = self.criterion_inference(pred_data, real)
             eval_data_loss_list.append(data_loss)
+
 
             # u_stat
             u_stat_data = uf.theil_u_statistic(pred_data, real)
@@ -279,7 +299,7 @@ class train_init():
             analysis_name="test_analysis_file"
 
         eval_step = 0
-        device = "cuda"
+
 
         eval_mse_loss_list = []
         eval_u_stat_list = []
@@ -290,14 +310,14 @@ class train_init():
             # get the condition_data and data_t and dict_str_solu
 
             # real_data
-            real = batch_data[:, :, 7:9].to(device)
-            label= label.to(device)
+            real = batch_data[:, :, 7:9]
+
 
             # omega_value
             pred_freq = self.S_Omega(real)
 
             # compare the real fourier domain's difference
-            real_freq = self.S_Omega.module.return_fft_spectrum(real, need_norm=True)
+            real_freq = self.S_Omega.return_fft_spectrum(real, need_norm=True)
 
             # g_omega_loss kl divergence
             g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)

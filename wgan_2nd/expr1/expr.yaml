@@ -9,5 +9,6 @@
   'batch_size': 256,
   'seed':42,
   'all_solus_numbers':None,
-  "data_length":None
+  "data_length":None,
+  "vari_number":2
 }

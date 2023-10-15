@@ -267,11 +267,13 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  sample_vesting=2,#unit （s）
                  grad_order=0,#1 order default
                  vari_number=2,
-                 Combination_basis=None,
+                 Combination_basis=None,device_type="cuda"
                  ):
         super(Omgea_MLPwith_residual_dict, self).__init__()
         if Combination_basis is None:
             self.basis_function = ["sin", "cos"]
+        self.device_type=device_type
+
 
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
         self.register_buffer('buffer_sample_length', torch.tensor(0)) #100
@@ -313,6 +315,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         elif output_act == 'sigmoid':
             self.output_act = nn.Sigmoid()
         elif output_act == 'Identity':
+            print("output_act is Identity")
             self.output_act = nn.Identity()
         elif output_act == 'round':
             self.output_act = RoundWithPrecisionSTE.apply()
@@ -404,16 +407,16 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         basis_nums = 2*len(self.buffer_freq_index.tolist())#
         # according to the to update symbol_matrix
 
-        data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).unsqueeze(0).unsqueeze(2).to("cuda")  # shape (1, 100, 1). to("cuda")
+        data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
         # get the left_matirx
         # like [32,100,51]
-        z1_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=True).to("cuda")
-        z2_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=True).to("cuda")
+        z1_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
+        z2_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
         omega_z1 = freq_distrubtion_tensor[:, :, 0]  # Shape is (32, 51)
         omega_z2 = freq_distrubtion_tensor[:, :, 1]  # Shape is (32, 51)
 
 
-        omega_value_var1=self.buffer_freq_index.unsqueeze(0).unsqueeze(2).to("cuda")
+        omega_value_var1=self.buffer_freq_index.unsqueeze(0).unsqueeze(2).to(self.device_type)
 
         omega_value_var1=omega_value_var1.repeat(batch_num,1,1)
 
@@ -452,8 +455,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         return left_matrix,pred_tensor
 
-
-
     def forward(self, x):
 
         '''
@@ -471,7 +472,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         for i,(layer,act) in enumerate(zip(self.layers['hidden'][0:-1],self.layers['hidden_act'][0:-1])):
             x = layer(x)
-
             x = act(x)
             x += residual #resiual connection
             residual = x
@@ -479,7 +479,9 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         x = self.layers['output'](x)
         #for varis softmax
         x=x.view(batch,-1,vari_number)
-        # soft-to prob distribution [batch,51,vari_number]
+        # OMEGA is soft-to prob distribution [batch,51,vari_number]
+        # inference is to get the coefficient
+
         x = self.output_act(x)
 
         return x

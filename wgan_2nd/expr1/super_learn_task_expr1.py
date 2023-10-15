@@ -11,13 +11,13 @@ import utlis_2nd.neural_base_class as nn_base
 warnings.filterwarnings("ignore")
 torch.set_default_dtype(torch.float64)
 from datetime import datetime
-omega_net_writer = {"train_process": 0,
-                    "valid_process": 0,
-                    "test_process": 0,
-                    "model_checkpoint_path": 0,
-                    "train_analysis_file": 0,
-                    "valid_analysis_file": 0,
-                    "test_analysis_file": 0}  # "train,valid,test,model_checkpoint"
+omega_net_writer = {   "train_process": 0,
+                        "valid_process": 0,
+                        "test_process": 0,
+                        "model_checkpoint_path": 0,
+                        "train_analysis_file": 0,
+                        "valid_analysis_file": 0,
+                        "test_analysis_file": 0}  # "train,valid,test,model_checkpoint"
 inference_net_writer = {    "train_process": 0,
                             "valid_process": 0,
                             "test_process": 0,
@@ -39,9 +39,18 @@ general_file_structure = {
 }
 
 config = {
-    # basis
+    # NN_config
     "batch_size": 256,
     "hidden_nueral_dims": [512, 512, 512],
+
+    "sample_vesting": 2,#unit (s)
+    "hidden_act":None,
+    "omega_output_act":None,
+    "inference_output_act":None,
+    "optimizer":None,
+    "vari_number":None,
+
+     #parameters
     "all_data_save_path": general_file_structure,
     "lamba_ini": 1,
     "lamba_grad": 1,
@@ -74,7 +83,8 @@ config = {
     "valid_loader": None,
     "test_loader": None,
     "current_expr_start_time": 0,
-    "data_length":None #t_steps
+    "data_length":None, #t_steps
+    "device":None,
 
 }
 
@@ -145,20 +155,20 @@ def record_init(folder_num,expr_data_path_new):
     config["inference_net_writer"]=inference_net_writer
     config["current_expr_start_time"]=current_time
 
-def train_omega_actor(co_train_actor):
+def train_omega_actor(co_train_actor,config_device):
     # set seed
     print("test_only_omega", flush=True)
     uf.set_seed(config["seed"])
     # train the model
-    eval_mse_value,eval_u_stat,eval_mae=co_train_actor.train_omega_neural()
+    eval_mse_value,eval_u_stat,eval_mae=co_train_actor.train_omega_neural(device=config_device)
     return eval_mse_value, eval_u_stat,eval_mae
 
-def train_inference_actor(co_train_actor):
+def train_inference_actor(co_train_actor,config_device):
     #set seed
     print("test_only_inference", flush=True)
     uf.set_seed(config["seed"])
     #train the model
-    co_train_actor.train_inference_neural()
+    co_train_actor.train_inference_neural(device=config_device)
 
 def test_inference_model(co_train_actor):
     '''
@@ -175,7 +185,7 @@ def test_inference_model(co_train_actor):
         test_df=pd.DataFrame(test_dict,index=[0])
         test_df.to_csv(config["CSV"]+"/inference_final_result.csv",mode="a",header=True)
     return test_dict
-    print("tested inference done")
+
 
 def test_omega_model(co_train_actor):
     '''
@@ -198,47 +208,66 @@ def test_omega_model(co_train_actor):
     return test_mse,u,test_mae
 
 
-def expr(expr_config):
+def expr(expr_config,train_type="omega_net"):
 
     # set seed
     uf.set_seed(expr_config["seed"])
 
-    print("start train_Supervised_learning", flush=True)
     print("the prior knowledge is", expr_config["prior_knowledge"], flush=True)
 
 
     #model_init
     S_I = nn_base.Omgea_MLPwith_residual_dict(     input_sample_lenth=expr_config["data_length"],
-                                                   hidden_dims=[512, 512, 512],
+                                                   hidden_dims=expr_config["hidden_nueral_dims"],
                                                    output_coeff=True,
-                                                   hidden_act="rational",
-                                                   output_act="Identity",
-                                                   sample_vesting=2,
-                                                   vari_number=2
+                                                   hidden_act=expr_config["hidden_act"] , #"rational"
+                                                   output_act=expr_config["inference_output_act"],#"identity"
+                                                   sample_vesting=expr_config["sample_vesting"],
+                                                   vari_number=expr_config["vari_number"],
                                              )
 
 
     S_Omega =nn_base.Omgea_MLPwith_residual_dict(  input_sample_lenth=expr_config["data_length"],
-                                                   hidden_dims=[512, 512, 512],
+                                                   hidden_dims=expr_config["hidden_nueral_dims"],
                                                    output_coeff=False,
-                                                   hidden_act="rational",
-                                                   output_act="softmax",
-                                                   sample_vesting=2,
-                                                   vari_number=2
+                                                   hidden_act=expr_config["hidden_act"], # "rational"
+                                                   output_act=expr_config["omega_output_act"],#softmax
+                                                   sample_vesting=expr_config["sample_vesting"],
+                                                   vari_number=expr_config["vari_number"]
                                                   )
 
     # get data
     co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
                                          expr_config["valid_loader"], expr_config["test_loader"],
                                          inference_net_writer,omega_net_writer)
-    # dp the train
-    co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
-    co_train_actor.S_I = torch.nn.DataParallel(co_train_actor.S_I, device_ids=[0])
+    # dp the train-cuda
+    if(expr_config["device"]=="cuda"):
+        co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
+        co_train_actor.S_I = torch.nn.DataParallel(co_train_actor.S_I, device_ids=[0])
+    else:
+        co_train_actor.S_Omega.to(device=expr_config["device"])
+        co_train_actor.S_I.to(device=expr_config["device"])
 
-    mse_value,u_stat,eval_mae=train_omega_actor(co_train_actor)
+    if (train_type=="omega_net"):
+        train_omega_actor(co_train_actor,config_device=expr_config["device"])
+        mse_value,u_stat,eval_mae=test_omega_model(co_train_actor)
+
+        return  mse_value,\
+        u_stat,\
+        eval_mae,\
+        co_train_actor
+
+    elif (train_type=="inference_net"):
+        train_inference_actor(co_train_actor,config_device=expr_config["device"])
+        test_dict=test_inference_model(co_train_actor)
+
+        return test_dict,\
+               co_train_actor
+
     print("we have train and valid" )
-    test_omega_model(co_train_actor)
-    return mse_value,u_stat,eval_mae
+
+
+
 
 import pandas as pd
 def save_config(config):
@@ -249,25 +278,30 @@ def save_config(config):
 
     config_save.to_csv(config["CSV"]+ "/config.csv")
 
-def train_omgea(results_save_path=None,folder_num=None,train_config=None):
+
+def do_expr(results_save_path=None,
+          folder_num=None,
+          train_config=None,
+          model_type=None):
     '''
     :param
         1.path:str
         2.folder_num: the folder number-int
         3.train_config: the config of the train -dict
 
-    :return: none
+    :return: results about mse,u,mae,
     '''
     #save the config to the save
 
     record_init(folder_num=folder_num,expr_data_path_new=results_save_path)
     save_config(train_config)
-    expr(expr_config=train_config)
-    print("expr done")
+    return expr(expr_config=train_config,train_type=model_type)
+
+
 
 
 if __name__ == '__main__':
-    train_omgea()
+    do_expr()
 
 
 
