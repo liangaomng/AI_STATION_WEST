@@ -50,7 +50,8 @@ class train_init():
         '''
         print("start train_inference")
         S_I_step = 0
-
+        save_analysis_path="train_analysis_file"
+        epoch_time=0
         #
         for epoch in range(self.I_num_epoch):
 
@@ -72,11 +73,6 @@ class train_init():
 
                 # inference loss
                 pred_coeffs = self.S_I(real) #[batch,freq_index*2,2]
-                #print("pred_coeff",pred_coeffs.shape) #[batch,freq_index*1,2]
-                #
-                # print("pretain_freq_distrubtion", pretain_freq_distrubtion.shape)#[batch,freq_index*1,2]
-                #
-                # #plot the freq distrubtion
 
 
 
@@ -84,13 +80,27 @@ class train_init():
                 pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data,need_norm=True)
 
                 if(save_2visualfig==True):
-                    #plot the freq distribution and the
-                    fig,ax=plt.subplots(2,1)
-                    ax[0].plot(np.linspace(0,50,51),pred_freq_distrubtion[0, :, 0].cpu().detach().numpy(), label="pred_freq_distrubtion")
-                    ax[0].plot(np.linspace(0,50,51),real_freq_distrubtion[0, :, 0].cpu().detach().numpy(), label="real_freq_distrubtion")
-                    ax[1].plot(np.linspace(0,2,100),pred_data[0, :, 0].cpu().detach().numpy(), label="pred_data")
-                    ax[0].legend()
-                    ax[1].legend()
+
+                    tensor_info={
+                                    "freq_index":self.S_I.buffer_freq_index,
+                                    "pred_freq_distribution":pred_freq_distrubtion,
+                                    "real_freq_distribution":real_freq_distrubtion,
+                                    "pred_data":pred_data,
+                                    "real_data":real,
+                                    "left_matrix":left_matrix,
+                                    "pred_coeffs":pred_coeffs,
+                                    "labels":label
+
+                                }
+                    record_time = S_I_step % self.config["train_nomin"]
+
+                    if(record_time==0):
+
+                        epoch_time=epoch_time+1
+
+                        self.S_I.save_tensor4visual(save_dict=tensor_info,
+                                                path=self.config["inference_net_writer"][save_analysis_path],
+                                                epoch_record=epoch_time)
 
 
 

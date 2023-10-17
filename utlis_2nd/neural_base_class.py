@@ -259,7 +259,8 @@ class RoundWithPrecisionSTE(torch.autograd.Function):
 
 class Omgea_MLPwith_residual_dict(nn.Module):
 
-    def __init__(self, input_sample_lenth,
+    def __init__(self,
+                 input_sample_lenth,
                  hidden_dims,
                  output_coeff=False,
                  hidden_act='rational',
@@ -271,7 +272,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  ):
         super(Omgea_MLPwith_residual_dict, self).__init__()
         if Combination_basis is None:
-            self.basis_function = ["sin", "cos"]
+            self.basis_function = ["1","sin", "cos"]
         self.device_type=device_type
 
 
@@ -298,8 +299,12 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         output_dim = self.buffer_freq_numbers*vari_number
 
-        if output_coeff== True:
-            output_dim = output_dim*len(self.basis_function) # last one is function number like 102*2
+        if output_coeff== True: #4inference net
+
+            self.non_zero_freq_num=self.buffer_freq_index[1:].numel()
+
+            output_dim = vari_number* (2*self.non_zero_freq_num+1) #2 means that sin and cos family
+            print("output_dim",output_dim)
 
         self.layers = nn.ModuleDict({
             "layer_norm": nn.LayerNorm([self.buffer_sample_length*vari_number]),# feature=[100*3]
@@ -353,13 +358,11 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         cat_tensor=torch.cat([tensor,grad_tensor],dim=1)   # '''先不考虑噪声'''
         return cat_tensor
 
-    def return_fft_spectrum(self,tensor,need_norm=True,vari_numbers=2,
-                            save_path=None,
-                            train_step=0,domin_number=32,label_save=0,name="real_data"):
+    def return_fft_spectrum(self,tensor,need_norm=True,vari_numbers=2):
         '''
 
         :param tensor: [batch,t_setp,vari_number],like [256,100,3]
-        need_vari_oder: 0 or 1
+
         :return: [batch,magn,vari_number],like [256,51,3]
         '''
         batch,t_set,vari_number=tensor.shape
@@ -367,81 +370,109 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         pick=tensor[:, :, 0:vari_numbers]
         #fft
         fft_tensor=torch.fft.rfft(pick,n=self.buffer_sample_length.item(),
-                                 dim=1)
+                                  dim=1)
         #abs
         magn_tensor=torch.abs(fft_tensor) #[batch,51,3]
 
-        if save_path is not None:
-            # save for plot
-            if train_step % domin_number == 0:
-                epoch_omega = train_step / domin_number
-                info = {
-                    "raw_data": tensor,
-                    "freqs_magn": magn_tensor,
-                    "epoch": epoch_omega,
-                    "label_save": label_save
-                }
-
-                torch.save(info, save_path + "/" + name + "_" + f"{int(epoch_omega)}.pth")
 
         if need_norm:
-            max,indice= torch.max(magn_tensor,dim=1,keepdim=True)
-
             norm_magn_tensor=F.normalize(magn_tensor, p=1.0, dim=1)
             return norm_magn_tensor
         else:
             return magn_tensor
+    def Return_sample_freq_index(self,
+                                 freq_distrubtion_tensor,
+                                 prob_sampe_numb) -> torch.Tensor:
+        # 可以搞一个取样的函数 informer # 从【51，2】采样得到【20，2】
+        smaple_result_list = []
+        batch_num,freq,vari=freq_distrubtion_tensor.shape
+        for i in range(batch_num):
+            sample_index = torch.multinomial(freq_distrubtion_tensor[i, :, 0], prob_sampe_numb, replacement=False)
 
-    def return_pred_data(self,coeff_tensor,freq_distrubtion_tensor):
+            smaple_result_list.append(sample_index)
+        # turn to tensor
+        result_sample_tensor = torch.stack(smaple_result_list, dim=0)
+
+        return result_sample_tensor
+
+    def return_pred_data(self,coeff_tensor,freq_distrubtion_tensor,prob_sampe_numb=12):
         '''
-        :param coeff_tensor: [batch,51,vari_number]
+        :param coeff_tensor: [batch,51,vari_number]--trainable
          hard_mean :the max numbers is very big, but we could regulization it
         :return: [batch,t_setp,vari_number]
         '''
-        prior_knowledge_matrix=["sin","cos"]
+        prior_knowledge_matrix=["1","sin","cos"]
         batch_num, coeff_number, vari = coeff_tensor.shape
 
         _, freq_num, _ = freq_distrubtion_tensor.shape
 
+        prior_omega_knowledge_number=len(prior_knowledge_matrix)-1
 
-        basis_nums = 2*len(self.buffer_freq_index.tolist())#
+        basis_nums = prior_omega_knowledge_number*(self.non_zero_freq_num)+1#2*50+dc=101
+
         # according to the to update symbol_matrix
 
         data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
         # get the left_matirx
         # like [32,100,51]
-        z1_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
-        z2_left_matirx = torch.zeros((batch_num, self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
-        omega_z1 = freq_distrubtion_tensor[:, :, 0]  # Shape is (32, 51)
-        omega_z2 = freq_distrubtion_tensor[:, :, 1]  # Shape is (32, 51)
+        z1_left_matirx = torch.zeros((batch_num,
+                                      self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
+        z2_left_matirx = torch.zeros((batch_num,
+                                      self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
 
 
-        omega_value_var1=self.buffer_freq_index.unsqueeze(0).unsqueeze(2).to(self.device_type)
 
-        omega_value_var1=omega_value_var1.repeat(batch_num,1,1)
+        Sample_omega_tensor= self.Return_sample_freq_index(freq_distrubtion_tensor,
+                                                          prob_sampe_numb=prob_sampe_numb)
 
-        omega_value_var1=omega_value_var1.reshape(batch_num,1,basis_nums//2)
+
+
+
+        # nonzero
+        nonzero_indices = torch.nonzero(self.buffer_freq_index)
+
+        nonzero_tensor= self.buffer_freq_index[nonzero_indices]
+
+        omega_value_var1 = nonzero_tensor.unsqueeze(0).to(self.device_type)
+
+        omega_value_var1 = omega_value_var1.repeat(batch_num,1,1)
+
+        omega_value_var1 = omega_value_var1.reshape(batch_num,1,50)
+
+
+        omega_value_var2 = nonzero_tensor.unsqueeze(0).to(self.device_type)
+
+        omega_value_var2 = omega_value_var2.repeat(batch_num,1,1)
+
+        omega_value_var2 = omega_value_var2.reshape(batch_num,1,50)
+        # z1_left_matirx=[batch,100,101]
+        #coeff_tensor[batch,101,2]
 
         for i, exprs in enumerate(prior_knowledge_matrix):
+
+            if exprs == "1":
+
+                z1_left_matirx[:, :, 0] = 1
+                z2_left_matirx[:, :, 0] = 1
+
 
             if exprs == "sin":
 
                 # [batch,100,freq_numbers]  omega_z1.unsqueeze(1) is [batch,1,freq_numbers]
                 z1 = torch.sin(omega_value_var1 * data_t)  # Broadcasting is done here
 
-                z1_left_matirx[:, :, 0:freq_num] = z1
-                z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
-                z2_left_matirx[:, :, 1:freq_num+1] = z2
+                z1_left_matirx[:, :, 1:self.non_zero_freq_num+1] = z1
+                z2 = torch.sin(omega_value_var2 *data_t)  # Broadcasting is done here
+                z2_left_matirx[:, :, 1:self.non_zero_freq_num+1] = z2
 
             elif  exprs == "cos":
                 # [batch,100,freq_numbers]
-                z1 = torch.cos(omega_z1.unsqueeze(1) * data_t)  # Broadcasting is done here
-                z1_left_matirx[:, :, freq_num :] = z1
-                z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
-                z2_left_matirx[:, :, freq_num:] = z2
+                z1 = torch.cos(omega_value_var1* data_t)  # Broadcasting is done here
+                z1_left_matirx[:, :, self.non_zero_freq_num+1:] = z1
+                z2 = torch.sin(omega_value_var2 * data_t)  # Broadcasting is done here
+                z2_left_matirx[:, :, self.non_zero_freq_num+1:] = z2
 
         left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)  # [batch, t_steps, freq_num, vari]
-
 
         #[batch, t_steps, freq_num, vari]*[batch, freq_num, vari,1]=[batch,t_steps,vari,1]
 
@@ -451,7 +482,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         pred_tensor = torch.cat((pred_1, pred_2), dim=2)  # [batch,100,2]
 
         self.register_buffer("left_matrix", left_matrix)
-
 
         return left_matrix,pred_tensor
 
@@ -501,10 +531,21 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         # 1e-10 to prevent log(0)
         entropies = -torch.sum(prob_distributions * torch.log2(prob_distributions + 1e-9), dim=dim_default)
 
-
         return entropies
 
+    def save_tensor4visual(self,**kwargs):
+        '''
+        this is a function for saving the tensor for visualization in the path
+        kwargs:
+                1.dict_tensor
+                2.path
+                3.epoch_times
+        '''
+        dict_tensor=kwargs["save_dict"]
+        epoch_omega=kwargs["epoch_record"]
+        filepath=kwargs["path"]
 
+        torch.save(dict_tensor,filepath+"/"+"tensor_"+f"{int(epoch_omega)}.pth")
 
 
 '''
@@ -691,63 +732,6 @@ def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,eval=False):
     return trans_condition,dict_str_solu
 
 from concurrent.futures import ProcessPoolExecutor
-
-def return_torch_version_matrix(coeff_tensor, omega_tensor, symbol_matrix):
-    '''
-
-    :param coeff_tensor: [batch,coeff_number,vari]
-    :param omega_tensor:
-    :param symbol_matrix: [[1],[sin]...]
-    :return:
-    '''
-    batch_num, coeff_number, vari = coeff_tensor.shape
-
-    _, freq_num, _ = omega_tensor.shape
-    basis_nums = coeff_number  #
-    # according to the to update symbol_matrix
-
-    data_t = torch.linspace(0, 2, 100).unsqueeze(0).unsqueeze(2).to("cuda")  # shape (1, 100, 1). to("cuda")
-    # get the left_matirx
-    #[32,100,7]
-    z1_left_matirx = torch.zeros((batch_num, 100, basis_nums), requires_grad=True).to("cuda")
-    z2_left_matirx = torch.zeros((batch_num, 100, basis_nums), requires_grad=True).to("cuda")
-    omega_z1= omega_tensor[:,:,0]  # Shape is (32, 3)
-    omega_z2 = omega_tensor[:, :, 1]  # Shape is (32, 3)
-
-    for i,exprs in enumerate(symbol_matrix[:, 0]):
-
-
-        if exprs==1:
-            #batch multiply
-            a = torch.ones((batch_num,100),dtype=torch.float64).to("cuda") * coeff_tensor[:, 0, 0].unsqueeze(1)
-            b = torch.ones((batch_num,100),dtype=torch.float64).to("cuda") * coeff_tensor[:, 0, 1].unsqueeze(1)
-            z1_left_matirx[:,:,0] = a
-            z2_left_matirx[:,:,0] = b
-
-        elif isinstance(exprs, sp.sin):
-
-            #[batch,100,freq_numbers]
-            z1 = torch.sin(omega_z1.unsqueeze(1) * data_t)  # Broadcasting is done here
-            z1_left_matirx[:,:,1:freq_num+1] = z1
-            z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
-            z2_left_matirx[:,:,1:freq_num+1] = z2
-
-        elif isinstance(exprs, sp.cos):
-            #[batch,100,freq_numbers]
-            z1 = torch.cos(omega_z1.unsqueeze(1)  * data_t)  # Broadcasting is done here
-            z1_left_matirx[:,:,freq_num+1:] = z1
-            z2 = torch.sin(omega_z2.unsqueeze(1) * data_t)  # Broadcasting is done here
-            z2_left_matirx[:,:,freq_num+1:] = z2
-
-    left_matrix=torch.stack((z1_left_matirx,z2_left_matirx),dim=3)#[32, 100, 7, 2]
-
-    fake_z1 = torch.bmm(left_matrix[:,:,:,0], coeff_tensor[:,:,0:1])  # return [batch,100,1]
-    fake_z2 = torch.bmm(left_matrix[:,:,:,1], coeff_tensor[:,:,1:2])  # return [batch,100,1]
-    fake_data=torch.cat((fake_z1,fake_z2),dim=2)
-    fake_gradient=uf.calculate_diff_grads(fake_data,data_t,plt_show=False)
-    fake_condition = torch.cat((fake_data, fake_gradient), dim=1)  # [batch,200,2]
-
-    return dict,left_matrix,fake_data,fake_condition
 
 
 import torch.nn.functional as F

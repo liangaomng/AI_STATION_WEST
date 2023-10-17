@@ -55,9 +55,9 @@ config = {
     "lamba_ini": 1,
     "lamba_grad": 1,
     "lamba_gp": 1,
-    "lamba_fourier": 1,
+    "lamba_fourier": 5,
     "prior_knowledge": {"basis_1": "x**0", "basis_2": "sin", "basis_3": "cos"},
-    "S_I_lr": 1e-3,
+    "S_I_lr": 1e-4,
     "S_Omega_lr": 1e-4,
     "grads_types": {"boundary": 3, "inner": 5},  # boundary:forward and backward;inner:five points
     "beta": 2,#temperature

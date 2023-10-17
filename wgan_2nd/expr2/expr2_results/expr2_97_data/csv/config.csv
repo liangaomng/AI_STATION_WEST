@@ -11,9 +11,9 @@ all_data_save_path,"{'train_process': '/liangaoming/conda_lam/expriments/paper1/
 lamba_ini,1
 lamba_grad,1
 lamba_gp,1
-lamba_fourier,1
+lamba_fourier,5
 prior_knowledge,"{'basis_1': 'x**0', 'basis_2': 'sin', 'basis_3': 'cos'}"
-S_I_lr,0.001
+S_I_lr,0.0001
 S_Omega_lr,0.0001
 grads_types,"{'boundary': 3, 'inner': 5}"
 beta,2
@@ -21,8 +21,8 @@ freq_numbers,51
 expr_data_path,/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data
 CSV,/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/csv
 tb_event,/tb_event
-omega_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x1788c9330>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x1788cbfd0>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x1788cae60>, 'model_checkpoint_path': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/model_check_point/omega_net/omega_net_model.pth', 'train_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/train_process/omega_net/analysis_files', 'valid_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/valid_process/omega_net/analysis_files', 'test_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/test_process/omega_net/analysis_files'}"
-inference_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x3086b0760>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x3420924d0>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x359e82ef0>, 'model_checkpoint_path': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/model_check_point/inference_net/inference_net_model.pth', 'train_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/train_process/inference_net/analysis_files', 'valid_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/valid_process/inference_net/analysis_files', 'test_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/test_process/omega_net/analysis_files'}"
+omega_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2f5fbed10>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2f5fbfe20>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2f5fbe710>, 'model_checkpoint_path': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/model_check_point/omega_net/omega_net_model.pth', 'train_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/train_process/omega_net/analysis_files', 'valid_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/valid_process/omega_net/analysis_files', 'test_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/test_process/omega_net/analysis_files'}"
+inference_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x2f5fbe980>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x150ee67a0>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x150ee70d0>, 'model_checkpoint_path': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/model_check_point/inference_net/inference_net_model.pth', 'train_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/train_process/inference_net/analysis_files', 'valid_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/valid_process/inference_net/analysis_files', 'test_analysis_file': '/Users/liangaoming/Documents/Ai_station/neural_find_sol/wgan_2nd/expr2/expr2_results/expr2_97_data/test_process/omega_net/analysis_files'}"
 train_nomin,32
 valid_nomin,4
 test_nomin,4
@@ -30,9 +30,9 @@ seed,42
 Omega_num_epoch,6
 Inference_num_epoch,100
 infer_minimum,0.1
-train_loader,<torch.utils.data.dataloader.DataLoader object at 0x1788cbc10>
-valid_loader,<torch.utils.data.dataloader.DataLoader object at 0x1788ca500>
-test_loader,<torch.utils.data.dataloader.DataLoader object at 0x1788c9ba0>
-current_expr_start_time,2023-10-13 18:15:02
+train_loader,<torch.utils.data.dataloader.DataLoader object at 0x2f5fbd5d0>
+valid_loader,<torch.utils.data.dataloader.DataLoader object at 0x2f5fbdab0>
+test_loader,<torch.utils.data.dataloader.DataLoader object at 0x2f5fbe7d0>
+current_expr_start_time,2023-10-17 16:03:08
 data_length,100
 device,cpu
