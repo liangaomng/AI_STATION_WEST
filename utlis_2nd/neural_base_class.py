@@ -382,25 +382,80 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             return magn_tensor
     def Return_sample_freq_index(self,
                                  freq_distrubtion_tensor,
-                                 prob_sampe_numb) -> torch.Tensor:
-        # 可以搞一个取样的函数 informer # 从【51，2】采样得到【20，2】
+                                 ) -> torch.Tensor:
+        # sample function from fouier space
         smaple_result_list = []
         batch_num,freq,vari=freq_distrubtion_tensor.shape
         for i in range(batch_num):
-            sample_index = torch.multinomial(freq_distrubtion_tensor[i, :, 0], prob_sampe_numb, replacement=False)
-
+            while True: #must do not get dc
+                sample_index = torch.multinomial(freq_distrubtion_tensor[i, :, 0], self.prob_sample_numb, replacement=False)
+                if 0 not in sample_index:
+                    break
             smaple_result_list.append(sample_index)
         # turn to tensor
         result_sample_tensor = torch.stack(smaple_result_list, dim=0)
 
         return result_sample_tensor
 
-    def return_pred_data(self,coeff_tensor,freq_distrubtion_tensor,prob_sampe_numb=12):
+    def Return_omega_vari_tensor(self,batch_num,Sample,Sample_index=None):
+
+        if Sample==False:
+
+            nonzero_indices = torch.nonzero(self.buffer_freq_index)
+
+            nonzero_tensor = self.buffer_freq_index[nonzero_indices]
+
+            omega_value_var1 = nonzero_tensor.unsqueeze(0).to(self.device_type)
+
+            omega_value_var1 = omega_value_var1.repeat(batch_num, 1, 1)
+
+            omega_value_var1 = omega_value_var1.reshape(batch_num, 1, self.non_zero_freq_num)
+
+            omega_value_var2 = nonzero_tensor.unsqueeze(0).to(self.device_type)
+
+            omega_value_var2 = omega_value_var2.repeat(batch_num, 1, 1)
+
+            omega_value_var2 = omega_value_var2.reshape(batch_num, 1, self.non_zero_freq_num)
+
+            return omega_value_var1,omega_value_var2
+
+        else:
+
+             print("Sample_index",Sample_index.shape) #[256,12]
+
+
+
+
+             omega_value_var1 = self.buffer_freq_index.unsqueeze(0).to(self.device_type) #[1,51,1]
+
+             omega_value_var1 = omega_value_var1.repeat(batch_num, 1,1)#[256,51]
+
+             omega_value_var1 = omega_value_var1.reshape(batch_num,51) #[256,51]
+
+
+             a = torch.gather(omega_value_var1, 1, index=Sample_index)
+
+             print("result",a)
+
+
+
+
+             return omega_value_var1,omega_value_var1
+
+
+
+    def return_pred_data(self,coeff_tensor,
+                         freq_distrubtion_tensor,
+                         Sample_choice=True,
+                         prob_sample_numb=3):
         '''
         :param coeff_tensor: [batch,51,vari_number]--trainable
          hard_mean :the max numbers is very big, but we could regulization it
         :return: [batch,t_setp,vari_number]
         '''
+        # get the sample
+        self.register_buffer('prob_sample_numb', torch.tensor(prob_sample_numb))
+
         prior_knowledge_matrix=["1","sin","cos"]
         batch_num, coeff_number, vari = coeff_tensor.shape
 
@@ -412,39 +467,38 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         # according to the to update symbol_matrix
 
-        data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
-        # get the left_matirx
-        # like [32,100,51]
-        z1_left_matirx = torch.zeros((batch_num,
-                                      self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
-        z2_left_matirx = torch.zeros((batch_num,
-                                      self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
+        data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).\
+            unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
+
+        if Sample_choice==True:
+
+            basis_nums= self.prob_sample_numb  # like [32,100,12]
+
+
+            z1_left_matirx = torch.zeros((batch_num,
+                                          self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
+            z2_left_matirx = torch.zeros((batch_num,
+                                          self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type) #like [32,100,101]
+
+            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor) # like [256,12]
+
+            omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
+                                                                               Sample=Sample_choice,
+                                                                               Sample_index=Sample_omega_index) # like [256,1,12]
+
+        elif Sample_choice==False:
+
+            z1_left_matirx = torch.zeros((batch_num,
+                                          self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)
+            z2_left_matirx = torch.zeros((batch_num,
+                                          self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)  # like [32,100,101]
+
+            omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
+                                                                               Sample=Sample_choice) # like [256,1,50]
 
 
 
-        Sample_omega_tensor= self.Return_sample_freq_index(freq_distrubtion_tensor,
-                                                          prob_sampe_numb=prob_sampe_numb)
 
-
-
-
-        # nonzero
-        nonzero_indices = torch.nonzero(self.buffer_freq_index)
-
-        nonzero_tensor= self.buffer_freq_index[nonzero_indices]
-
-        omega_value_var1 = nonzero_tensor.unsqueeze(0).to(self.device_type)
-
-        omega_value_var1 = omega_value_var1.repeat(batch_num,1,1)
-
-        omega_value_var1 = omega_value_var1.reshape(batch_num,1,50)
-
-
-        omega_value_var2 = nonzero_tensor.unsqueeze(0).to(self.device_type)
-
-        omega_value_var2 = omega_value_var2.repeat(batch_num,1,1)
-
-        omega_value_var2 = omega_value_var2.reshape(batch_num,1,50)
         # z1_left_matirx=[batch,100,101]
         #coeff_tensor[batch,101,2]
 
