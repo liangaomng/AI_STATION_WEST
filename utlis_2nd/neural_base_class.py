@@ -268,7 +268,8 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  sample_vesting=2,#unit （s）
                  grad_order=0,#1 order default
                  vari_number=2,
-                 Combination_basis=None,device_type="cuda"
+                 Combination_basis=None,
+                 device_type="cuda"
                  ):
         super(Omgea_MLPwith_residual_dict, self).__init__()
         if Combination_basis is None:
@@ -358,7 +359,8 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         cat_tensor=torch.cat([tensor,grad_tensor],dim=1)   # '''先不考虑噪声'''
         return cat_tensor
 
-    def return_fft_spectrum(self,tensor,need_norm=True,vari_numbers=2):
+    def return_fft_spectrum(self,tensor,
+                            need_norm=True,vari_numbers=2):
         '''
 
         :param tensor: [batch,t_setp,vari_number],like [256,100,3]
@@ -374,30 +376,39 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         #abs
         magn_tensor=torch.abs(fft_tensor) #[batch,51,3]
 
-
         if need_norm:
             norm_magn_tensor=F.normalize(magn_tensor, p=1.0, dim=1)
+
             return norm_magn_tensor
         else:
+
             return magn_tensor
     def Return_sample_freq_index(self,
                                  freq_distrubtion_tensor,
                                  ) -> torch.Tensor:
         # sample function from fouier space
-        smaple_result_list = []
         batch_num,freq,vari=freq_distrubtion_tensor.shape
-        for i in range(batch_num):
-            while True: #must do not get dc
-                sample_index = torch.multinomial(freq_distrubtion_tensor[i, :, 0], self.prob_sample_numb, replacement=False)
-                if 0 not in sample_index:
-                    break
-            smaple_result_list.append(sample_index)
-        # turn to tensor
-        result_sample_tensor = torch.stack(smaple_result_list, dim=0)
 
-        return result_sample_tensor
+        sample_index_vari = torch.zeros(batch_num, self.prob_sample_numb, vari).to(self.device_type)
 
-    def Return_omega_vari_tensor(self,batch_num,Sample,Sample_index=None):
+        for i in range (batch_num):
+            for j in range(vari):
+                while True: #must do not get dc
+
+                    sample_index_vari[i,:,j] = torch.multinomial(freq_distrubtion_tensor[i,:,j],
+                                                                 self.prob_sample_numb,
+                                                                 replacement=False)
+                    print("sample_index_vari",sample_index_vari[i,:,j])
+
+        sample_index_vari=sample_index_vari.long()
+
+        # return to tensor
+        return sample_index_vari
+
+    def Return_omega_vari_tensor(self,
+                                 batch_num,
+                                 Sample,
+                                 Sample_index=None):
 
         if Sample==False:
 
@@ -421,11 +432,8 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         else:
 
-             print("Sample_index",Sample_index.shape) #[256,12]
-
-
-
-
+             #Sample_index should be [256,12,2]
+             print("sample_index",Sample_index.shape)
              omega_value_var1 = self.buffer_freq_index.unsqueeze(0).to(self.device_type) #[1,51,1]
 
              omega_value_var1 = omega_value_var1.repeat(batch_num, 1,1)#[256,51]
@@ -433,21 +441,27 @@ class Omgea_MLPwith_residual_dict(nn.Module):
              omega_value_var1 = omega_value_var1.reshape(batch_num,51) #[256,51]
 
 
-             a = torch.gather(omega_value_var1, 1, index=Sample_index)
+             omega_value_var1_sample = torch.gather(omega_value_var1, 1, index=Sample_index[:,:,0])
+             omega_value_var1_sample = omega_value_var1_sample.unsqueeze(dim=1)
 
-             print("result",a)
+             omega_value_var2 = self.buffer_freq_index.unsqueeze(0).to(self.device_type) #[1,51,1]
 
+             omega_value_var2 = omega_value_var2.repeat(batch_num, 1,1)#[256,51]
 
+             omega_value_var2 = omega_value_var2.reshape(batch_num,51) #[256,51]
 
+             omega_value_var2_sample= torch.gather(omega_value_var2, 1, index=Sample_index[:,:,1])
 
-             return omega_value_var1,omega_value_var1
+             omega_value_var2_sample=omega_value_var2_sample.unsqueeze(dim=1)
+
+             return omega_value_var1_sample,omega_value_var2_sample
 
 
 
     def return_pred_data(self,coeff_tensor,
                          freq_distrubtion_tensor,
                          Sample_choice=True,
-                         prob_sample_numb=3):
+                         prob_sample_numb=1):
         '''
         :param coeff_tensor: [batch,51,vari_number]--trainable
          hard_mean :the max numbers is very big, but we could regulization it
@@ -463,7 +477,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         prior_omega_knowledge_number=len(prior_knowledge_matrix)-1
 
-        basis_nums = prior_omega_knowledge_number*(self.non_zero_freq_num)+1#2*50+dc=101
 
         # according to the to update symbol_matrix
 
@@ -472,21 +485,22 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         if Sample_choice==True:
 
-            basis_nums= self.prob_sample_numb  # like [32,100,12]
-
+            basis_nums = prior_omega_knowledge_number * (self.prob_sample_numb) + 1  # 2*50+dc=101# like [32,100,12] #+1 is dc
 
             z1_left_matirx = torch.zeros((batch_num,
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type)
             z2_left_matirx = torch.zeros((batch_num,
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type) #like [32,100,101]
 
-            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor) # like [256,12]
+            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor) # like [256,12,2] 2 is vari
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
                                                                                Sample=Sample_choice,
-                                                                               Sample_index=Sample_omega_index) # like [256,1,12]
+                                                                               Sample_index=Sample_omega_index) # like [256,100,12]
 
         elif Sample_choice==False:
+
+            basis_nums = prior_omega_knowledge_number * (self.non_zero_freq_num) + 1  # 2*50+dc=101
 
             z1_left_matirx = torch.zeros((batch_num,
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)
@@ -494,13 +508,8 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)  # like [32,100,101]
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
-                                                                               Sample=Sample_choice) # like [256,1,50]
+                                                                               Sample=Sample_choice) # like [256,12]
 
-
-
-
-        # z1_left_matirx=[batch,100,101]
-        #coeff_tensor[batch,101,2]
 
         for i, exprs in enumerate(prior_knowledge_matrix):
 
@@ -511,27 +520,42 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
 
             if exprs == "sin":
-
                 # [batch,100,freq_numbers]  omega_z1.unsqueeze(1) is [batch,1,freq_numbers]
+
                 z1 = torch.sin(omega_value_var1 * data_t)  # Broadcasting is done here
 
-                z1_left_matirx[:, :, 1:self.non_zero_freq_num+1] = z1
+                z1_left_matirx[:, :, 1:self.prob_sample_numb+1] = z1
                 z2 = torch.sin(omega_value_var2 *data_t)  # Broadcasting is done here
-                z2_left_matirx[:, :, 1:self.non_zero_freq_num+1] = z2
+
+                z2_left_matirx[:, :, 1:self.prob_sample_numb+1] = z2
 
             elif  exprs == "cos":
                 # [batch,100,freq_numbers]
+
                 z1 = torch.cos(omega_value_var1* data_t)  # Broadcasting is done here
-                z1_left_matirx[:, :, self.non_zero_freq_num+1:] = z1
+                z1_left_matirx[:, :, self.prob_sample_numb+1:] = z1
                 z2 = torch.sin(omega_value_var2 * data_t)  # Broadcasting is done here
-                z2_left_matirx[:, :, self.non_zero_freq_num+1:] = z2
+                z2_left_matirx[:, :, self.prob_sample_numb+1:] = z2
 
         left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)  # [batch, t_steps, freq_num, vari]
 
-        #[batch, t_steps, freq_num, vari]*[batch, freq_num, vari,1]=[batch,t_steps,vari,1]
+        #coeff_tensor[batch,101,2]
+        Coeff_sample_tensor=coeff_tensor[:,1:,:].reshape(-1,self.non_zero_freq_num,prior_omega_knowledge_number,vari)
+        #Coeff_sample_tensor=[batch,50,prior_omega_knowledge_number,2] =[batch,50,2,2]
 
-        pred_1 = torch.bmm(left_matrix[:, :, :, 0], coeff_tensor[:, :, 0:1])  # return [batch,t_steps,1]
-        pred_2 = torch.bmm(left_matrix[:, :, :, 1], coeff_tensor[:, :, 1:2])  # return [batch,t_steps,1]
+        Sample_omega_index_pick=Sample_omega_index.unsqueeze(2)
+        Sample_omega_index_pick=Sample_omega_index_pick.repeat(1,1,prior_omega_knowledge_number,1)
+
+        Sample_omega_index_pick=Sample_omega_index_pick-1 #reduce dc
+
+        Coeff_sample_tensor= torch.gather(Coeff_sample_tensor,dim=1,index=Sample_omega_index_pick) # [batch,3,2,2]
+
+        Coeff_sample_tensor=Coeff_sample_tensor.reshape(-1,self.prob_sample_numb*prior_omega_knowledge_number,vari)
+        Cat_dc_sample= torch.cat((coeff_tensor[:,0:1,:],Coeff_sample_tensor),dim=1) # [batch,101,2]
+
+        # [batch, t_steps, freq_num, vari]*[batch, freq_num, vari,1]=[batch,t_steps,vari,1]
+        pred_1 = torch.bmm(left_matrix[:, :, :, 0], Cat_dc_sample[:, :, 0:1])  # return [batch,t_steps,1]
+        pred_2 = torch.bmm(left_matrix[:, :, :, 1], Cat_dc_sample[:, :, 1:2])  # return [batch,t_steps,1]
 
         pred_tensor = torch.cat((pred_1, pred_2), dim=2)  # [batch,100,2]
 
