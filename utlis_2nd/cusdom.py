@@ -1,7 +1,7 @@
 import torch
 import yaml
 from torch.utils.data import Dataset,DataLoader,random_split
-
+torch.set_default_dtype(torch.float32)
 class CustomDataset(Dataset):
     def __init__(self, file_path):
         # readt .pt
@@ -13,7 +13,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         # get data&label
         # label is a string of csv number
-        data = self.data[index]
+        data = self.data[index].float()
         label = self.label[index]
         # pre-processing
         return data, label

@@ -168,7 +168,16 @@ class omega_generator(nn.Module):
 
         return self.omega
 
+class TemperatureSoftmax(nn.Module):
+    def __init__(self, temperature=1.0,soft_dim=1):
+        super(TemperatureSoftmax, self).__init__()
+        self.temperature = temperature
+        self.dim = soft_dim
 
+    def forward(self, logits):
+
+        scaled_logits = logits / self.temperature
+        return F.softmax(scaled_logits, dim=self.dim)
 class Rational(torch.nn.Module):
     """Rational Activation function.
     Implementation provided by Mario Casado (https://github.com/Lezcano)
@@ -245,10 +254,9 @@ class Coeff_period_solu(nn.Module):
 
         return fake_coeff
 
-
 class RoundWithPrecisionSTE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, decimal_places=0):
+    def forward(ctx, input, decimal_places=1):
         multiplier = 10 ** decimal_places
         return torch.round(input * multiplier) / multiplier
 
@@ -256,6 +264,37 @@ class RoundWithPrecisionSTE(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output, None  # identity gradient
 
+from torch.autograd import Variable
+class gumble_softmax(nn.Module):
+    def __init__(self,device='cpu'):
+        super(gumble_softmax, self).__init__()
+        self.laten_dim=2
+        self.categorical_dim=51
+        self.device=device
+    def sample_gumbel(self,shape, eps=1e-20):
+        U = torch.rand(shape).cpu()
+        return Variable(torch.log(-torch.log(U + eps) + eps))
+
+    def gumbel_softmax_sample(self,logits, temperature):
+        y = logits + self.sample_gumbel(logits.size())
+        return F.softmax(y / temperature, dim=-1)
+
+    def gumbel_softmax(self,logits, temperature):
+        """
+        ST-gumple-softmax
+        input: [*, n_class]
+        return: flatten --> [*, n_class] an one-hot vector
+        """
+        y = self.gumbel_softmax_sample(logits, temperature)
+        shape = y.size()
+        _, ind = y.max(dim=-1)
+        y_hard = torch.zeros_like(y).view(-1, shape[-1])
+        y_hard.scatter_(1, ind.view(-1, 1), 1)
+        y_hard = y_hard.view(*shape)
+        y_hard = (y_hard - y).detach() + y
+        return y_hard.view(-1, self.latent_dim * self.categorical_dim)
+
+temp_softmax=TemperatureSoftmax()
 
 class Omgea_MLPwith_residual_dict(nn.Module):
 
@@ -269,13 +308,25 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  grad_order=0,#1 order default
                  vari_number=2,
                  Combination_basis=None,
-                 device_type="cuda"
+                 device_type="cuda",
+                 sample_model='topk',
+                 pre_process="None",
+                 soft_temp=0.1,
+                 prob_sample_numb=1,
+                 Sample_choice=False,
+                 dropout=0.1,
                  ):
+
         super(Omgea_MLPwith_residual_dict, self).__init__()
         if Combination_basis is None:
             self.basis_function = ["1","sin", "cos"]
         self.device_type=device_type
 
+        self.sample_model=sample_model
+        self.pre_process=pre_process
+        self.soft_temp=soft_temp
+        self.prob_sample_numb=prob_sample_numb
+        self.Sample_choice=Sample_choice
 
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
         self.register_buffer('buffer_sample_length', torch.tensor(0)) #100
@@ -316,6 +367,10 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         })
 
+        self.dropout = nn.Dropout(dropout)
+
+        self.register_parameter("temp",nn.Parameter(torch.tensor(0.01)))
+
         if output_act == 'softmax':
             self.output_act = nn.Softmax(dim=1)
         elif output_act == 'sigmoid':
@@ -325,6 +380,9 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             self.output_act = nn.Identity()
         elif output_act == 'round':
             self.output_act = RoundWithPrecisionSTE.apply()
+        elif output_act == "distill_temp":
+            self.output_act = TemperatureSoftmax(self.temp)
+
 
         prev_dim=hidden_dims[0]
 
@@ -334,6 +392,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             if hidden_act == 'rational':
 
                 self.layers['hidden_act'].append(Rational())
+
 
             elif hidden_act == 'learnable_phi':
 
@@ -385,20 +444,64 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             return magn_tensor
     def Return_sample_freq_index(self,
                                  freq_distrubtion_tensor,
-                                 ) -> torch.Tensor:
+                                 model="soft_argmax",
+                                 pre_process="None",
+                                 temp=1.0) -> torch.Tensor:
+        '''
+        :param
+             1.model = "topk" top from
+             2.model  ="adaptive topk" top from
+             3.model ="multi-nomial"
+
+        :return:
+        '''
         # sample function from fouier space
         batch_num,freq,vari=freq_distrubtion_tensor.shape
 
         sample_index_vari = torch.zeros(batch_num, self.prob_sample_numb, vari).to(self.device_type)
 
-        for i in range (batch_num):
-            for j in range(vari):
-                while True: #must do not get dc
 
-                    sample_index_vari[i,:,j] = torch.multinomial(freq_distrubtion_tensor[i,:,j],
-                                                                 self.prob_sample_numb,
-                                                                 replacement=False)
-                    print("sample_index_vari",sample_index_vari[i,:,j])
+        if pre_process == "gumble":
+
+            gumble_tensor = torch.zeros(batch_num, freq, vari).to(self.device_type)
+
+            for i in range(vari):
+                gumble_tensor[:, :, i] = F.gumbel_softmax(freq_distrubtion_tensor[:, :, i],
+                                                          tau=temp,
+                                                          hard=False,
+                                                          eps=1e-15)  # [256,51,2]
+
+            process_tensor=gumble_tensor
+
+        elif pre_process == "None":
+
+            process_tensor=freq_distrubtion_tensor
+
+        if model == "topk":
+
+            value,sample_index_vari = torch.topk(process_tensor[:,1:,:],dim=1,k=self.prob_sample_numb)
+
+        elif model == "multi-nominal":
+
+
+            for i in range(vari):
+                vari_sample_index= torch.multinomial(process_tensor[:,:,i],
+                                                     self.prob_sample_numb,
+                                                     replacement=False)
+                sample_index_vari[:,:,i]=vari_sample_index
+
+        elif model == "soft_argmax":
+
+            tau=self.temp
+
+            soft_prob = F.softmax(process_tensor / tau, dim=1).requires_grad_(True)
+
+            # soft argmax
+            indices = self.buffer_freq_index.view(1, freq, 1).expand(batch_num, freq, 2)
+
+            soft_index = torch.sum(soft_prob * indices ,dim=1)
+            sample_index_vari=soft_index.unsqueeze(1)
+
 
         sample_index_vari=sample_index_vari.long()
 
@@ -411,64 +514,51 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                                  Sample_index=None):
 
         if Sample==False:
-
+            # 找到非零索引
             nonzero_indices = torch.nonzero(self.buffer_freq_index)
 
+            # 使用非零索引获得非零张量
             nonzero_tensor = self.buffer_freq_index[nonzero_indices]
 
-            omega_value_var1 = nonzero_tensor.unsqueeze(0).to(self.device_type)
+            # 转换到适当的设备
+            nonzero_tensor = nonzero_tensor.to(self.device_type)
 
-            omega_value_var1 = omega_value_var1.repeat(batch_num, 1, 1)
+            # 扩展并重塑张量
+            omega_value_var = nonzero_tensor.unsqueeze(0).repeat(batch_num, 1, 1)
+            omega_value_var = omega_value_var.reshape(batch_num, 1, self.non_zero_freq_num)
 
-            omega_value_var1 = omega_value_var1.reshape(batch_num, 1, self.non_zero_freq_num)
-
-            omega_value_var2 = nonzero_tensor.unsqueeze(0).to(self.device_type)
-
-            omega_value_var2 = omega_value_var2.repeat(batch_num, 1, 1)
-
-            omega_value_var2 = omega_value_var2.reshape(batch_num, 1, self.non_zero_freq_num)
+            # 由于 omega_value_var1 和 omega_value_var2 是相同的，只需创建一个
+            omega_value_var1 = omega_value_var
+            omega_value_var2 = omega_value_var
 
             return omega_value_var1,omega_value_var2
 
         else:
 
              #Sample_index should be [256,12,2]
-             print("sample_index",Sample_index.shape)
-             omega_value_var1 = self.buffer_freq_index.unsqueeze(0).to(self.device_type) #[1,51,1]
 
-             omega_value_var1 = omega_value_var1.repeat(batch_num, 1,1)#[256,51]
+             # 扩展和重塑 buffer_freq_index
+             omega_value_var = self.buffer_freq_index.unsqueeze(0).to(self.device_type)
+             omega_value_var = omega_value_var.repeat(batch_num, 1)
+             # 注意：omega_value_var 的形状已经是 [batch_num, 51]，因此不需要重塑
 
-             omega_value_var1 = omega_value_var1.reshape(batch_num,51) #[256,51]
-
-
-             omega_value_var1_sample = torch.gather(omega_value_var1, 1, index=Sample_index[:,:,0])
+             # 根据 Sample_index 提取样本
+             omega_value_var1_sample = torch.gather(omega_value_var, 1, index=Sample_index[:, :, 0])
              omega_value_var1_sample = omega_value_var1_sample.unsqueeze(dim=1)
 
-             omega_value_var2 = self.buffer_freq_index.unsqueeze(0).to(self.device_type) #[1,51,1]
+             omega_value_var2_sample = torch.gather(omega_value_var, 1, index=Sample_index[:, :, 1])
+             omega_value_var2_sample = omega_value_var2_sample.unsqueeze(dim=1)
 
-             omega_value_var2 = omega_value_var2.repeat(batch_num, 1,1)#[256,51]
-
-             omega_value_var2 = omega_value_var2.reshape(batch_num,51) #[256,51]
-
-             omega_value_var2_sample= torch.gather(omega_value_var2, 1, index=Sample_index[:,:,1])
-
-             omega_value_var2_sample=omega_value_var2_sample.unsqueeze(dim=1)
-
-             return omega_value_var1_sample,omega_value_var2_sample
-
-
+             return omega_value_var1_sample, omega_value_var2_sample
 
     def return_pred_data(self,coeff_tensor,
-                         freq_distrubtion_tensor,
-                         Sample_choice=True,
-                         prob_sample_numb=1):
+                         freq_distrubtion_tensor):
         '''
         :param coeff_tensor: [batch,51,vari_number]--trainable
          hard_mean :the max numbers is very big, but we could regulization it
-        :return: [batch,t_setp,vari_number]
+        :return: [batch,t_step,vari_number]
         '''
         # get the sample
-        self.register_buffer('prob_sample_numb', torch.tensor(prob_sample_numb))
 
         prior_knowledge_matrix=["1","sin","cos"]
         batch_num, coeff_number, vari = coeff_tensor.shape
@@ -483,7 +573,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).\
             unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
 
-        if Sample_choice==True:
+        if self.Sample_choice==True:
 
             basis_nums = prior_omega_knowledge_number * (self.prob_sample_numb) + 1  # 2*50+dc=101# like [32,100,12] #+1 is dc
 
@@ -492,13 +582,21 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             z2_left_matirx = torch.zeros((batch_num,
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type) #like [32,100,101]
 
-            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor) # like [256,12,2] 2 is vari
+            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor,
+                                                               model=self.sample_model,
+                                                               pre_process=self.pre_process,
+                                                               temp=self.soft_temp,
+                                                               ) # like [256,12,2] 2 is vari
+
+
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
-                                                                               Sample=Sample_choice,
+                                                                               Sample=self.Sample_choice,
                                                                                Sample_index=Sample_omega_index) # like [256,100,12]
 
-        elif Sample_choice==False:
+
+
+        elif self.Sample_choice==False:
 
             basis_nums = prior_omega_knowledge_number * (self.non_zero_freq_num) + 1  # 2*50+dc=101
 
@@ -508,33 +606,42 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)  # like [32,100,101]
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
-                                                                               Sample=Sample_choice) # like [256,12]
+                                                                               Sample=self.Sample_choice) # like [256,12]
+
+            Sample_omega_index= torch.arange(start=0, end=50, step=1)
+
+            Sample_omega_index =  Sample_omega_index.reshape(1,50,1)
+
+
+            Sample_omega_index=Sample_omega_index.repeat(batch_num,1,2)# like[256, 50, 2]
+            Sample_omega_index = Sample_omega_index.long()
+
+
+            self.prob_sample_numb = (basis_nums - 1) // prior_omega_knowledge_number
+
 
 
         for i, exprs in enumerate(prior_knowledge_matrix):
 
-            if exprs == "1":
-
+            if exprs == "1":#have set ones
                 z1_left_matirx[:, :, 0] = 1
                 z2_left_matirx[:, :, 0] = 1
 
-
             if exprs == "sin":
                 # [batch,100,freq_numbers]  omega_z1.unsqueeze(1) is [batch,1,freq_numbers]
-
                 z1 = torch.sin(omega_value_var1 * data_t)  # Broadcasting is done here
 
                 z1_left_matirx[:, :, 1:self.prob_sample_numb+1] = z1
+
                 z2 = torch.sin(omega_value_var2 *data_t)  # Broadcasting is done here
 
                 z2_left_matirx[:, :, 1:self.prob_sample_numb+1] = z2
 
             elif  exprs == "cos":
                 # [batch,100,freq_numbers]
-
                 z1 = torch.cos(omega_value_var1* data_t)  # Broadcasting is done here
                 z1_left_matirx[:, :, self.prob_sample_numb+1:] = z1
-                z2 = torch.sin(omega_value_var2 * data_t)  # Broadcasting is done here
+                z2 = torch.cos(omega_value_var2 * data_t)  # Broadcasting is done here
                 z2_left_matirx[:, :, self.prob_sample_numb+1:] = z2
 
         left_matrix = torch.stack((z1_left_matirx, z2_left_matirx), dim=3)  # [batch, t_steps, freq_num, vari]
@@ -543,15 +650,20 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         Coeff_sample_tensor=coeff_tensor[:,1:,:].reshape(-1,self.non_zero_freq_num,prior_omega_knowledge_number,vari)
         #Coeff_sample_tensor=[batch,50,prior_omega_knowledge_number,2] =[batch,50,2,2]
 
-        Sample_omega_index_pick=Sample_omega_index.unsqueeze(2)
+        Sample_omega_index_pick=Sample_omega_index.unsqueeze(2) # mark
+
+
         Sample_omega_index_pick=Sample_omega_index_pick.repeat(1,1,prior_omega_knowledge_number,1)
 
-        Sample_omega_index_pick=Sample_omega_index_pick-1 #reduce dc
+        print("Coeff_sample_tensor",Coeff_sample_tensor.shape)
+        print("Sample_omega_index_pick",Sample_omega_index_pick.shape)
 
-        Coeff_sample_tensor= torch.gather(Coeff_sample_tensor,dim=1,index=Sample_omega_index_pick) # [batch,3,2,2]
+        Coeff_sample_tensor= torch.gather(Coeff_sample_tensor,dim=1,index=Sample_omega_index_pick) # [batch,50,2,2]
 
         Coeff_sample_tensor=Coeff_sample_tensor.reshape(-1,self.prob_sample_numb*prior_omega_knowledge_number,vari)
+
         Cat_dc_sample= torch.cat((coeff_tensor[:,0:1,:],Coeff_sample_tensor),dim=1) # [batch,101,2]
+
 
         # [batch, t_steps, freq_num, vari]*[batch, freq_num, vari,1]=[batch,t_steps,vari,1]
         pred_1 = torch.bmm(left_matrix[:, :, :, 0], Cat_dc_sample[:, :, 0:1])  # return [batch,t_steps,1]
@@ -573,6 +685,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         '''
         batch,t_step,vari_number=x.shape
         x=x.reshape(batch,-1) #[batch,100*2*3]
+
         x=self.layers["layer_norm"](x)
         x = self.layers['input'](x)
         x = self.layers['hidden_act'][0](x)
@@ -580,6 +693,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         for i,(layer,act) in enumerate(zip(self.layers['hidden'][0:-1],self.layers['hidden_act'][0:-1])):
             x = layer(x)
+            x= self.dropout(x)
             x = act(x)
             x += residual #resiual connection
             residual = x
@@ -588,9 +702,10 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         #for varis softmax
         x=x.view(batch,-1,vari_number)
         # OMEGA is soft-to prob distribution [batch,51,vari_number]
-        # inference is to get the coefficient
+        # inference is to get the coefficient by the prior knowledge
 
         x = self.output_act(x)
+
 
         return x
 

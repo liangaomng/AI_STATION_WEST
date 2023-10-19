@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 import warnings
 import utlis_2nd.neural_base_class as nn_base
 warnings.filterwarnings("ignore")
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.float32)
 from datetime import datetime
 omega_net_writer = {   "train_process": 0,
                         "valid_process": 0,
@@ -240,6 +240,7 @@ def expr(expr_config,train_type="omega_net"):
     co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
                                          expr_config["valid_loader"], expr_config["test_loader"],
                                          inference_net_writer,omega_net_writer)
+    print("****",co_train_actor.config["lamba_fouier"])
     # dp the train-cuda
     if(expr_config["device"]=="cuda"):
         co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])

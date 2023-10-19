@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 import warnings
 import utlis_2nd.neural_base_class as nn_base
 warnings.filterwarnings("ignore")
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.float32)
 from datetime import datetime
 omega_net_writer = {   "train_process": 0,
                         "valid_process": 0,
@@ -60,7 +60,6 @@ config = {
     "S_I_lr": 1e-4,
     "S_Omega_lr": 1e-4,
     "grads_types": {"boundary": 3, "inner": 5},  # boundary:forward and backward;inner:five points
-    "beta": 2,#temperature
     "freq_numbers": 51,
     # save path
     "expr_data_path": general_file_structure["train_process"],
@@ -79,12 +78,22 @@ config = {
     "Inference_num_epoch": 2,
     "infer_minimum": 1e-1,
 
+
+    "soft_temp" :1,
+    "pre_process" : "gumble",
+    "sample_model" : "topk",
+    "prob_sample_numb" : 1,
+    "Sample_choice":False,
+
     "train_loader": None,
     "valid_loader": None,
     "test_loader": None,
     "current_expr_start_time": 0,
     "data_length":None, #t_steps
     "device":None,
+
+    "Inference_net":None
+
 
 }
 
@@ -215,7 +224,6 @@ def expr(expr_config,train_type="omega_net"):
 
     print("the prior knowledge is", expr_config["prior_knowledge"], flush=True)
 
-
     #model_init
     S_I = nn_base.Omgea_MLPwith_residual_dict(     input_sample_lenth=expr_config["data_length"],
                                                    hidden_dims=expr_config["hidden_nueral_dims"],
@@ -224,9 +232,13 @@ def expr(expr_config,train_type="omega_net"):
                                                    output_act=expr_config["inference_output_act"],#"identity"
                                                    sample_vesting=expr_config["sample_vesting"],
                                                    vari_number=expr_config["vari_number"],
-                                                   device_type=expr_config["device"]
+                                                   device_type=expr_config["device"],
+                                                   sample_model=expr_config["sample_model"],
+                                                   pre_process=expr_config["pre_process"],
+                                                   soft_temp=expr_config["soft_temp"],
+                                                   prob_sample_numb=expr_config["prob_sample_numb"],
+                                                   Sample_choice=expr_config["Sample_choice"],
                                              )
-
 
     S_Omega =nn_base.Omgea_MLPwith_residual_dict(  input_sample_lenth=expr_config["data_length"],
                                                    hidden_dims=expr_config["hidden_nueral_dims"],
@@ -235,13 +247,16 @@ def expr(expr_config,train_type="omega_net"):
                                                    output_act=expr_config["omega_output_act"],#softmax
                                                    sample_vesting=expr_config["sample_vesting"],
                                                    vari_number=expr_config["vari_number"],
-                                                   device_type=expr_config["device"]
+                                                   device_type=expr_config["device"],
                                                   )
 
     # get data
     co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
                                          expr_config["valid_loader"], expr_config["test_loader"],
                                          inference_net_writer,omega_net_writer)
+
+
+
     # dp the train-cuda
     if(expr_config["device"]=="cuda"):
         co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
@@ -300,7 +315,6 @@ def do_expr(results_save_path=None,
     record_init(folder_num=folder_num,expr_data_path_new=results_save_path)
     save_config(train_config)
     return expr(expr_config=train_config,train_type=model_type)
-
 
 
 

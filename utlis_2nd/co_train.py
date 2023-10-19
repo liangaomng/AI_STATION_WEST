@@ -6,9 +6,11 @@ import torch.optim as optim
 import time
 import torch.nn as nn
 from geomloss import SamplesLoss
-import matplotlib.pyplot as plt
+
 class train_init():
     def __init__(self,S_I,S_Omega,config,train_loader,valid_loader,test_loader,S_I_writer,S_Omega_writer):
+
+
         self.config=config
         self.train_loader=train_loader
         self.valid_loader=valid_loader
@@ -37,8 +39,8 @@ class train_init():
         self.S_Omega_optimizer = optim.Adam(S_Omega.parameters(), lr=config["S_Omega_lr"])
         self.I_num_epoch = self.config["Inference_num_epoch"]
         self.Omega_num_epoch = self.config["Omega_num_epoch"]
-        self.beta = self.config["beta"]
         self.freq_numbers = self.config["freq_numbers"]
+        self.lamba_fourier = self.config["lamba_fourier"]
 
     def train_inference_neural(self,
                                process_name="train_process",
@@ -49,6 +51,8 @@ class train_init():
         return eval_value
         '''
         print("start train_inference")
+        print("lambada",self.lamba_fourier)
+
         S_I_step = 0
         save_analysis_path="train_analysis_file"
         epoch_time=0
@@ -61,7 +65,7 @@ class train_init():
                 # get the condition_data and data_t and dict_str_solu
 
                 # real_data
-                real = batch_data[:, :, 7:9].to(device)
+                real = batch_data[:, :, 7:9].float().to(device)
 
                 # omega_value
                 # with torch.no_grad():
@@ -74,10 +78,10 @@ class train_init():
                 # inference loss
                 pred_coeffs = self.S_I(real) #[batch,freq_index*2,2]
 
-
-
                 left_matrix,pred_data=self.S_I.return_pred_data(pred_coeffs,real_freq_distrubtion)
                 pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data,need_norm=True)
+
+
 
                 if(save_2visualfig==True):
 
@@ -108,9 +112,15 @@ class train_init():
                 mse_loss = self.criterion_inference(pred_data, real)
                 self.mse_loss_list.append(mse_loss)
                 fouier_loss = self.criterion_fourier(pred_freq_distrubtion, real_freq_distrubtion)
+
+                #sparse -l1
+                l1_norm = self.S_I.layers["output"].weight.abs().sum()
+
+
                 self.fourier_loss_list.append(fouier_loss)
 
-                infer_loss = mse_loss + self.config["lamba_fourier"] * fouier_loss
+                infer_loss = mse_loss + self.lamba_fourier * fouier_loss+1*l1_norm
+
                 self.inference_loss_list.append(infer_loss)
                 # optimizer
                 self.S_I_optimizer.zero_grad()
@@ -184,6 +194,8 @@ class train_init():
                 g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)
                 self.g_omega_freq_loss_list.append(g_omega_freq_loss)
 
+
+
                 # save for the data
                 # optimizer
                 self.S_Omega_optimizer.zero_grad()
@@ -238,17 +250,12 @@ class train_init():
             # real_data
             real = batch_data[:, :, 7:9]
 
-            # omega_value
-            with torch.no_grad():
-                self.S_Omega.eval()
-                pretain_freq_distrubtion = self.S_Omega(real)  # [batch,freq_index,2]
-
             # compare the fourier domain's difference
             real_freq_distrubtion = self.S_I.return_fft_spectrum(real, need_norm=True)
 
             # inference loss
             pred_coeffs = self.S_I(real)  # [batch,freq_index*2,2]
-            left_matrix,pred_data = self.S_I.return_pred_data(pred_coeffs, pretain_freq_distrubtion)
+            left_matrix,pred_data = self.S_I.return_pred_data(pred_coeffs, real_freq_distrubtion)
 
             pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data, need_norm=True)
 

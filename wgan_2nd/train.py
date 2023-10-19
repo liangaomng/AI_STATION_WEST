@@ -15,7 +15,7 @@ from tqdm import tqdm
 #set_default_dtype float64
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.float32)
 #get loader data
 path="complex_center_dataset"
 train_loader = torch.load(path+'/complex_center_train.pth')
