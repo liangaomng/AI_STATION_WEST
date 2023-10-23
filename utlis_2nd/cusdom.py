@@ -31,8 +31,9 @@ def read_yaml_file(file_path):
         data = yaml.safe_load(file)
     return data
 
-
+from collections import namedtuple
 import sys
+
 def return_train_valid_test4loader(abso_path="",
                                    yaml_path='expr.yaml'):
 

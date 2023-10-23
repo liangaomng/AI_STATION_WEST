@@ -79,26 +79,20 @@ config = {
     "Inference_num_epoch": 2,
     "infer_minimum": 1e-1,
 
-
-    "soft_temp" :1,
-    "pre_process" : "gumble",
-    "sample_model" : "topk",
-    "prob_sample_numb" : 1,
-    "Sample_choice":False,
-
+    #sample and temp
+    "soft_arg_info":None,
+    "gumble_info" :None,
+    "sample_choice" : None,
+    #loader
     "train_loader": None,
     "valid_loader": None,
     "test_loader": None,
+    #data_length
     "current_expr_start_time": 0,
     "data_length":None, #t_steps
     "device":None,
 
-    "Inference_net":None
-
-
 }
-
-
 
 def current2_time():
     current_time = datetime.now()
@@ -226,7 +220,8 @@ def expr(expr_config,train_type="omega_net"):
     print("the prior knowledge is", expr_config["prior_knowledge"], flush=True)
 
     #model_init
-    S_I = nn_base.Omgea_MLPwith_residual_dict(     input_sample_lenth=expr_config["data_length"],
+    S_I = nn_base.Omgea_MLPwith_residual_dict(
+                                                   input_sample_lenth=expr_config["data_length"],
                                                    hidden_dims=expr_config["hidden_nueral_dims"],
                                                    output_coeff=True,
                                                    hidden_act=expr_config["hidden_act"] , #"rational"
@@ -234,49 +229,27 @@ def expr(expr_config,train_type="omega_net"):
                                                    sample_vesting=expr_config["sample_vesting"],
                                                    vari_number=expr_config["vari_number"],
                                                    device_type=expr_config["device"],
-                                                   sample_model=expr_config["sample_model"],
-                                                   pre_process=expr_config["pre_process"],
-                                                   soft_temp=expr_config["soft_temp"],
-                                                   prob_sample_numb=expr_config["prob_sample_numb"],
-                                                   Sample_choice=expr_config["Sample_choice"],
+                                                   sample_info=expr_config["sample_info"],
+                                                   soft_arg_temp_info=expr_config["soft_arg_info"],
+                                                   gumble_info=expr_config["gumble_info"],
+
                                              )
 
-    S_Omega =nn_base.Omgea_MLPwith_residual_dict(  input_sample_lenth=expr_config["data_length"],
-                                                   hidden_dims=expr_config["hidden_nueral_dims"],
-                                                   output_coeff=False,
-                                                   hidden_act=expr_config["hidden_act"], # "rational"
-                                                   output_act=expr_config["omega_output_act"],#softmax
-                                                   sample_vesting=expr_config["sample_vesting"],
-                                                   vari_number=expr_config["vari_number"],
-                                                   device_type=expr_config["device"],
-                                                  )
-
+    S_Omega="None"
     # get data
-    co_train_actor = co_train.train_init(S_I, S_Omega, expr_config, expr_config["train_loader"],
-                                         expr_config["valid_loader"], expr_config["test_loader"],
+    co_train_actor = co_train.train_init(S_I,
+                                         S_Omega,
+                                         expr_config,
                                          inference_net_writer,omega_net_writer)
-
-
 
     # dp the train-cuda
     if(expr_config["device"]=="cuda"):
-        co_train_actor.S_Omega = torch.nn.DataParallel(co_train_actor.S_Omega, device_ids=[0])
         co_train_actor.S_I = torch.nn.DataParallel(co_train_actor.S_I, device_ids=[0])
     else:
-        co_train_actor.S_Omega.to(device=expr_config["device"])
         co_train_actor.S_I.to(device=expr_config["device"])
 
-    if (train_type=="omega_net"):
-        train_omega_actor(co_train_actor,config_device=expr_config["device"])
-        mse_value,u_stat,eval_mae=test_omega_model(co_train_actor)
-
-        return  mse_value,\
-        u_stat,\
-        eval_mae,\
-        co_train_actor
-
-    elif (train_type=="inference_net"):
-        print("hi")
+    if (train_type=="inference_net"):
+        print("hi_inference_net")
         train_inference_actor(co_train_actor,config_device=expr_config["device"])
         test_dict=test_inference_model(co_train_actor)
 
@@ -316,7 +289,6 @@ def do_expr(results_save_path=None,
     record_init(folder_num=folder_num,expr_data_path_new=results_save_path)
     save_config(train_config)
     return expr(expr_config=train_config,train_type=model_type)
-
 
 
 if __name__ == '__main__':

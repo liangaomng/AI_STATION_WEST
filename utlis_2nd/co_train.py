@@ -8,13 +8,14 @@ import torch.nn as nn
 from geomloss import SamplesLoss
 
 class train_init():
-    def __init__(self,S_I,S_Omega,config,train_loader,valid_loader,test_loader,S_I_writer,S_Omega_writer):
+    def __init__(self,S_I,S_Omega,config,S_I_writer,S_Omega_writer):
 
 
         self.config=config
-        self.train_loader=train_loader
-        self.valid_loader=valid_loader
-        self.test_loader=test_loader
+        self.train_loader=config["train_loader"]
+        self.valid_loader=config["valid_loader"]
+        self.test_loader=config["test_loader"]
+
         #criterion
         self.criterion_inference = nn.MSELoss()
         self.criterion_ini = nn.MSELoss()
@@ -28,15 +29,11 @@ class train_init():
         self.grad_loss_list = []
         self.fourier_loss_list = []
         self.mse_loss_list = []
-
-
         #writer
         self.S_I_Writer=S_I_writer
         self.S_Omega_Writer=S_Omega_writer
         self.S_I =S_I
-        self.S_Omega =S_Omega
         self.S_I_optimizer = optim.Adam(S_I.parameters(), lr=config["S_I_lr"])
-        self.S_Omega_optimizer = optim.Adam(S_Omega.parameters(), lr=config["S_Omega_lr"])
         self.I_num_epoch = self.config["Inference_num_epoch"]
         self.Omega_num_epoch = self.config["Omega_num_epoch"]
         self.freq_numbers = self.config["freq_numbers"]
@@ -77,7 +74,6 @@ class train_init():
                 pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data,need_norm=True)
 
 
-
                 if(save_2visualfig==True):
 
                     tensor_info={
@@ -106,7 +102,7 @@ class train_init():
                 # save for the data-visualization
                 mse_loss = self.criterion_inference(pred_data, real)
                 self.mse_loss_list.append(mse_loss)
-                fouier_loss = self.criterion_fourier(pred_freq_distrubtion, real_freq_distrubtion)
+                fouier_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
 
                 #sparse -l1
                 l1_norm = self.S_I.layers["output"].weight.abs().sum()
@@ -255,7 +251,7 @@ class train_init():
             pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data, need_norm=True)
 
             # g_omega_loss
-            g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion, real_freq_distrubtion)
+            g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
             eval_freq_loss_list.append(g_omega_freq_loss)
             # data_loss
             data_loss = self.criterion_inference(pred_data, real)

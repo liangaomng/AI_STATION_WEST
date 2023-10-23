@@ -95,7 +95,6 @@ class SineLayer(nn.Module):
         intermediate = self.omega_0 * self.linear(input)
         return torch.sin(intermediate), intermediate
 
-
 class Siren(nn.Module):
     def __init__(self, in_features, hidden_features, hidden_layers, out_features, outermost_linear=False,
                  first_omega_0=30, hidden_omega_0=30):
@@ -127,7 +126,6 @@ class Siren(nn.Module):
         coords = coords.clone().detach().requires_grad_(True)  # allows to take derivative w.r.t. input
         output = self.net(coords)
         return output
-
 
 class omega_generator(nn.Module):
     def __init__(self,input_dim=400,output_dim=2,act='rational'):
@@ -294,13 +292,12 @@ class gumble_softmax(nn.Module):
         y_hard = (y_hard - y).detach() + y
         return y_hard.view(-1, self.latent_dim * self.categorical_dim)
 
-temp_softmax=TemperatureSoftmax()
 
-from collections import namedtuple
 
-Transition = namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
-# 创建一个 Transition 对象
-trans = Transition(state=1, action=2, reward=3, next_state=4, done=False)
+
+# Transition = namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
+# # 创建一个 Transition 对象
+# trans = Transition(state=1, action=2, reward=3, next_state=4, done=False)
 class Omgea_MLPwith_residual_dict(nn.Module):
 
     def __init__(self,
@@ -314,42 +311,46 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  vari_number=2,
                  Combination_basis=None,
                  device_type="cuda",
-                 sample_model='topk',
-                 pre_process="None",
-
-                 soft_temp=["False",1.0],
-                 distll_temp=1.0,
-                 learn_distill_temp=False,
-                 prob_sample_numb=1,
-                 gumble_temp=1.0,
-                 Sample_choice=False,
+                 sample_info=[None,1],#["gumble/topk","prob_number=1,2"]
+                 soft_arg_temp_info=[False,1.0],
+                 gumble_info=[False,1.0],
                  dropout=0.1,
                  ):
 
         super(Omgea_MLPwith_residual_dict, self).__init__()
+
         if Combination_basis is None:
             self.basis_function = ["1","sin", "cos"]
         self.device_type=device_type
 
-        self.sample_model=sample_model
-        self.pre_process=pre_process
-        self.prob_sample_numb=prob_sample_numb
-        self.Sample_choice=Sample_choice
+        self.sample_type = sample_info[0]     #"topk" or "soft_argmax"
 
+        if self.sample_type in ("Topk", "Soft_argmax"):
 
-        if(soft_temp[0]==False):
+            self.sample_en = True
+
+        elif self.sample_type == None:#mean sample all
+
+            self.sample_en = False
+
+        self.prob_sample_numb = sample_info[1]
+
+        self.soft_en=soft_arg_temp_info[0]
+        self.soft_temp_value = soft_arg_temp_info[1]
+        self.gumble_en=gumble_info[0]
+        self.gumble_temp_value = gumble_info[1]
+
+        if(self.soft_en == True):
             #can upgrade
-            self.register_parameter("softarg_temp",torch.nn.Parameter(torch.tensor(soft_temp)))
+            self.register_parameter("softarg_temp",torch.nn.Parameter(torch.tensor(self.soft_temp_value)))
         else:
-            #cannot upgrade
-            self.register_buffer("softarg_temp",torch.nn.Parameter(torch.tensor(soft_temp)))
+            self.register_buffer("softarg_temp",torch.nn.Parameter(torch.tensor(self.soft_temp_value)))
 
-        if(learn_distill_temp==False):
+        if(self.gumble_en== True):
             #can upgrade
-            self.register_parameter("distill_temp",torch.nn.Parameter(torch.tensor(distll_temp)))
+            self.register_parameter("gumble_temp",torch.nn.Parameter(torch.tensor(self.gumble_temp_value)))
         else:
-            #cannot upgrade
-            self.register_buffer("distill_temp",torch.nn.Parameter(torch.tensor(distll_temp)))
+            self.register_buffer("gumble_temp",torch.nn.Parameter(torch.tensor(self.gumble_temp_value)))
 
 
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
@@ -393,7 +394,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-
         if output_act == 'softmax':
             self.output_act = nn.Softmax(dim=1)
         elif output_act == 'sigmoid':
@@ -415,7 +415,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             if hidden_act == 'rational':
 
                 self.layers['hidden_act'].append(Rational())
-
 
             elif hidden_act == 'learnable_phi':
 
@@ -466,65 +465,45 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
             return magn_tensor
     def Return_sample_freq_index(self,
-                                 freq_distrubtion_tensor,
-                                 model="soft_argmax",
-                                 pre_process="None",
-                                 temp=1.0) -> torch.Tensor:
+                                 freq_distrubtion_tensor) -> torch.Tensor:
         '''
-        :param
-             1.model = "topk" top from
-             2.model  ="adaptive topk" top from
-             3.model ="multi-nomial"
-
-        :return:
+        :return: index[batch,prob_sample_numb,vari_number]
         '''
         # sample function from fouier space
         batch_num,freq,vari=freq_distrubtion_tensor.shape
 
         sample_index_vari = torch.zeros(batch_num, self.prob_sample_numb, vari).to(self.device_type)
 
+        if self.gumble_en == True:
 
-        if pre_process == "gumble":
-
-            gumble_tensor = torch.zeros(batch_num, freq, vari).to(self.device_type)
-
-            for i in range(vari):
-                gumble_tensor[:, :, i] = F.gumbel_softmax(freq_distrubtion_tensor[:, :, i],
-                                                          tau=self.gumble_temp,
-                                                          hard=False,
-                                                          eps=1e-15)  # [256,51,2]
+            gumble_tensor = F.gumbel_softmax(freq_distrubtion_tensor,
+                                            tau=self.gumble_temp,
+                                            hard=False,
+                                            eps=1e-15,
+                                            dim=1)  # [256,51,2]
 
             process_tensor=gumble_tensor
 
-        elif pre_process == "None":
+        elif self.gumble_en == False:
 
             process_tensor=freq_distrubtion_tensor
 
-        if model == "topk":
+        if self.sample_type == "Topk":
 
-            value,sample_index_vari = torch.topk(process_tensor[:,1:,:],dim=1,k=self.prob_sample_numb)
+            value,sample_index_vari = torch.topk(process_tensor[:,1:,:],
+                                                 dim=1,
+                                                 k=self.prob_sample_numb)
 
-        elif model == "multi-nominal":
+        elif self.sample_type == "Soft_argmax":
 
 
-            for i in range(vari):
-                vari_sample_index= torch.multinomial(process_tensor[:,:,i],
-                                                     self.prob_sample_numb,
-                                                     replacement=False)
-                sample_index_vari[:,:,i]=vari_sample_index
-
-        elif model == "soft_argmax":
-
-            tau=self.temp
-
+            tau=self.softarg_temp
             soft_prob = F.softmax(process_tensor / tau, dim=1).requires_grad_(True)
-
             # soft argmax
             indices = self.buffer_freq_index.view(1, freq, 1).expand(batch_num, freq, 2)
 
             soft_index = torch.sum(soft_prob * indices ,dim=1)
             sample_index_vari=soft_index.unsqueeze(1)
-
 
         sample_index_vari=sample_index_vari.long()
 
@@ -537,35 +516,29 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                                  Sample_index=None):
 
         if Sample==False:
-            # 找到非零索引
+            # non-zero index all is sampling
             nonzero_indices = torch.nonzero(self.buffer_freq_index)
 
-            # 使用非零索引获得非零张量
             nonzero_tensor = self.buffer_freq_index[nonzero_indices]
 
-            # 转换到适当的设备
             nonzero_tensor = nonzero_tensor.to(self.device_type)
 
-            # 扩展并重塑张量
             omega_value_var = nonzero_tensor.unsqueeze(0).repeat(batch_num, 1, 1)
             omega_value_var = omega_value_var.reshape(batch_num, 1, self.non_zero_freq_num)
 
-            # 由于 omega_value_var1 和 omega_value_var2 是相同的，只需创建一个
             omega_value_var1 = omega_value_var
             omega_value_var2 = omega_value_var
 
             return omega_value_var1,omega_value_var2
 
         else:
-
              #Sample_index should be [256,12,2]
-
-             # 扩展和重塑 buffer_freq_index
+             # reshape buffer_freq_index
              omega_value_var = self.buffer_freq_index.unsqueeze(0).to(self.device_type)
              omega_value_var = omega_value_var.repeat(batch_num, 1)
-             # 注意：omega_value_var 的形状已经是 [batch_num, 51]，因此不需要重塑
+             # [batch_num, 51]
 
-             # 根据 Sample_index 提取样本
+             # gather the index
              omega_value_var1_sample = torch.gather(omega_value_var, 1, index=Sample_index[:, :, 0])
              omega_value_var1_sample = omega_value_var1_sample.unsqueeze(dim=1)
 
@@ -590,13 +563,12 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         prior_omega_knowledge_number=len(prior_knowledge_matrix)-1
 
-
         # according to the to update symbol_matrix
 
         data_t = torch.linspace(0, self.buffer_sample_time, self.buffer_sample_length).\
             unsqueeze(0).unsqueeze(2).to(self.device_type)  # shape (1, 100, 1). to("cuda")
 
-        if self.Sample_choice==True:
+        if self.sample_en==True:
 
             basis_nums = prior_omega_knowledge_number * (self.prob_sample_numb) + 1  # 2*50+dc=101# like [32,100,12] #+1 is dc
 
@@ -605,21 +577,13 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             z2_left_matirx = torch.zeros((batch_num,
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to( self.device_type) #like [32,100,101]
 
-            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor,
-                                                               model=self.sample_model,
-                                                               pre_process=self.pre_process,
-                                                               temp=self.soft_temp,
-                                                               ) # like [256,12,2] 2 is vari
-
-
+            Sample_omega_index = self.Return_sample_freq_index(freq_distrubtion_tensor) # like [256,12,2] 2 is vari
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
-                                                                               Sample=self.Sample_choice,
+                                                                               Sample=self.sample_en,
                                                                                Sample_index=Sample_omega_index) # like [256,100,12]
 
-
-
-        elif self.Sample_choice==False:
+        elif self.sample_en==False:
 
             basis_nums = prior_omega_knowledge_number * (self.non_zero_freq_num) + 1  # 2*50+dc=101
 
@@ -629,19 +593,16 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                                           self.buffer_sample_length, basis_nums), requires_grad=False).to(self.device_type)  # like [32,100,101]
 
             omega_value_var1, omega_value_var2 = self.Return_omega_vari_tensor(batch_num=batch_num,
-                                                                               Sample=self.Sample_choice) # like [256,12]
+                                                                               Sample=self.sample_en) # like [256,12]
 
             Sample_omega_index= torch.arange(start=0, end=50, step=1)
 
             Sample_omega_index =  Sample_omega_index.reshape(1,50,1)
 
-
             Sample_omega_index=Sample_omega_index.repeat(batch_num,1,2)# like[256, 50, 2]
             Sample_omega_index = Sample_omega_index.long()
 
-
             self.prob_sample_numb = (basis_nums - 1) // prior_omega_knowledge_number
-
 
 
         for i, exprs in enumerate(prior_knowledge_matrix):
@@ -674,7 +635,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         Sample_omega_index_pick=Sample_omega_index.unsqueeze(2) # mark
 
-
         Sample_omega_index_pick=Sample_omega_index_pick.repeat(1,1,prior_omega_knowledge_number,1)
 
         Coeff_sample_tensor= torch.gather(Coeff_sample_tensor,dim=1,index=Sample_omega_index_pick) # [batch,50,2,2]
@@ -682,7 +642,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         Coeff_sample_tensor=Coeff_sample_tensor.reshape(-1,self.prob_sample_numb*prior_omega_knowledge_number,vari)
 
         Cat_dc_sample= torch.cat((coeff_tensor[:,0:1,:],Coeff_sample_tensor),dim=1) # [batch,101,2]
-
 
         # [batch, t_steps, freq_num, vari]*[batch, freq_num, vari,1]=[batch,t_steps,vari,1]
         pred_1 = torch.bmm(left_matrix[:, :, :, 0], Cat_dc_sample[:, :, 0:1])  # return [batch,t_steps,1]
@@ -722,7 +681,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         x=x.view(batch,-1,vari_number)
         # OMEGA is soft-to prob distribution [batch,51,vari_number]
         # inference is to get the coefficient by the prior knowledge
-
         x = self.output_act(x)
 
 

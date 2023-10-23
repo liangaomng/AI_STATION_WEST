@@ -1,7 +1,7 @@
 #this is yaml file for expr1
 # expr1.yaml
 {
-  'expr_name': 'expr1',
+  'expr_name': 'expr2',
   'type': "supervised_learning",
   'train_size_percent': 0.8,
   'valid_size_percent': 0.1,
@@ -10,5 +10,9 @@
   'seed':42,
   'all_solus_numbers':None,
   "data_length":None,
-  "vari_number":2
+  "vari_number":2,
+  "Soft_argmax_info":[True,1.0], #[learnable,value]
+  "Gumble_info":[False,0.4],
+  "Sample_info":["Soft_argmax",1],#[none means all,prob_numbers]
+
 }

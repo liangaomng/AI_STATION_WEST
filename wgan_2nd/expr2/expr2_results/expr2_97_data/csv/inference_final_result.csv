@@ -16,3 +16,9 @@
 0,"tensor(-5.2190, grad_fn=<DivBackward0>)","tensor(346.7061, grad_fn=<DivBackward0>)","tensor(0.9178, grad_fn=<DivBackward0>)","tensor(331.4493, grad_fn=<DivBackward0>)","tensor(15.7751, grad_fn=<DivBackward0>)"
 ,eval_freq_loss,eval_data_loss,eval_u_stat_data,eval_sinkhorn_data,eval_mae
 0,"tensor(-5.2482, grad_fn=<DivBackward0>)","tensor(301.4168, grad_fn=<DivBackward0>)","tensor(0.6613, grad_fn=<DivBackward0>)","tensor(239.6239, grad_fn=<DivBackward0>)","tensor(14.3345, grad_fn=<DivBackward0>)"
+,eval_freq_loss,eval_data_loss,eval_u_stat_data,eval_sinkhorn_data,eval_mae
+0,"tensor(-5.2876, grad_fn=<DivBackward0>)","tensor(234.7619, grad_fn=<DivBackward0>)","tensor(0.5137, grad_fn=<DivBackward0>)","tensor(168.3218, grad_fn=<DivBackward0>)","tensor(11.9842, grad_fn=<DivBackward0>)"
+,eval_freq_loss,eval_data_loss,eval_u_stat_data,eval_sinkhorn_data,eval_mae
+0,"tensor(1.7174, grad_fn=<DivBackward0>)","tensor(316.2888, grad_fn=<DivBackward0>)","tensor(0.7899, grad_fn=<DivBackward0>)","tensor(258.5527, grad_fn=<DivBackward0>)","tensor(14.8435, grad_fn=<DivBackward0>)"
+,eval_freq_loss,eval_data_loss,eval_u_stat_data,eval_sinkhorn_data,eval_mae
+0,"tensor(1.7174, grad_fn=<DivBackward0>)","tensor(316.2888, grad_fn=<DivBackward0>)","tensor(0.7899, grad_fn=<DivBackward0>)","tensor(258.5527, grad_fn=<DivBackward0>)","tensor(14.8435, grad_fn=<DivBackward0>)"
