@@ -51,7 +51,6 @@ class train_init():
         return eval_value
         '''
         print("start train_inference")
-        print("lambada",self.lamba_fourier)
 
         S_I_step = 0
         save_analysis_path="train_analysis_file"
@@ -67,10 +66,6 @@ class train_init():
                 # real_data
                 real = batch_data[:, :, 7:9].float().to(device)
 
-                # omega_value
-                # with torch.no_grad():
-                #     self.S_Omega.eval()
-                        #pretain_freq_distrubtion = self.S_Omega(real) #[batch,freq_index,2]
 
                 # compare the fourier domain's difference
                 real_freq_distrubtion  = self.S_I.return_fft_spectrum(real,need_norm=True)
@@ -119,7 +114,7 @@ class train_init():
 
                 self.fourier_loss_list.append(fouier_loss)
 
-                infer_loss = mse_loss + self.lamba_fourier * fouier_loss+1*l1_norm
+                infer_loss = mse_loss + self.config["lamba_fourier"] * fouier_loss+self.config["lamba_lasso"]*l1_norm
 
                 self.inference_loss_list.append(infer_loss)
                 # optimizer

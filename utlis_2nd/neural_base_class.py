@@ -296,6 +296,11 @@ class gumble_softmax(nn.Module):
 
 temp_softmax=TemperatureSoftmax()
 
+from collections import namedtuple
+
+Transition = namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
+# 创建一个 Transition 对象
+trans = Transition(state=1, action=2, reward=3, next_state=4, done=False)
 class Omgea_MLPwith_residual_dict(nn.Module):
 
     def __init__(self,
@@ -311,8 +316,12 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  device_type="cuda",
                  sample_model='topk',
                  pre_process="None",
-                 soft_temp=0.1,
+
+                 soft_temp=["False",1.0],
+                 distll_temp=1.0,
+                 learn_distill_temp=False,
                  prob_sample_numb=1,
+                 gumble_temp=1.0,
                  Sample_choice=False,
                  dropout=0.1,
                  ):
@@ -324,9 +333,24 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         self.sample_model=sample_model
         self.pre_process=pre_process
-        self.soft_temp=soft_temp
         self.prob_sample_numb=prob_sample_numb
         self.Sample_choice=Sample_choice
+
+
+        if(soft_temp[0]==False):
+            #can upgrade
+            self.register_parameter("softarg_temp",torch.nn.Parameter(torch.tensor(soft_temp)))
+        else:
+            #cannot upgrade
+            self.register_buffer("softarg_temp",torch.nn.Parameter(torch.tensor(soft_temp)))
+
+        if(learn_distill_temp==False):
+            #can upgrade
+            self.register_parameter("distill_temp",torch.nn.Parameter(torch.tensor(distll_temp)))
+        else:
+            #cannot upgrade
+            self.register_buffer("distill_temp",torch.nn.Parameter(torch.tensor(distll_temp)))
+
 
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
         self.register_buffer('buffer_sample_length', torch.tensor(0)) #100
@@ -369,7 +393,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.register_parameter("temp",nn.Parameter(torch.tensor(0.01)))
 
         if output_act == 'softmax':
             self.output_act = nn.Softmax(dim=1)
@@ -381,7 +404,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         elif output_act == 'round':
             self.output_act = RoundWithPrecisionSTE.apply()
         elif output_act == "distill_temp":
-            self.output_act = TemperatureSoftmax(self.temp)
+            self.output_act = TemperatureSoftmax(self.softarg_temp)
 
 
         prev_dim=hidden_dims[0]
@@ -467,7 +490,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
             for i in range(vari):
                 gumble_tensor[:, :, i] = F.gumbel_softmax(freq_distrubtion_tensor[:, :, i],
-                                                          tau=temp,
+                                                          tau=self.gumble_temp,
                                                           hard=False,
                                                           eps=1e-15)  # [256,51,2]
 
@@ -648,15 +671,11 @@ class Omgea_MLPwith_residual_dict(nn.Module):
 
         #coeff_tensor[batch,101,2]
         Coeff_sample_tensor=coeff_tensor[:,1:,:].reshape(-1,self.non_zero_freq_num,prior_omega_knowledge_number,vari)
-        #Coeff_sample_tensor=[batch,50,prior_omega_knowledge_number,2] =[batch,50,2,2]
 
         Sample_omega_index_pick=Sample_omega_index.unsqueeze(2) # mark
 
 
         Sample_omega_index_pick=Sample_omega_index_pick.repeat(1,1,prior_omega_knowledge_number,1)
-
-        print("Coeff_sample_tensor",Coeff_sample_tensor.shape)
-        print("Sample_omega_index_pick",Sample_omega_index_pick.shape)
 
         Coeff_sample_tensor= torch.gather(Coeff_sample_tensor,dim=1,index=Sample_omega_index_pick) # [batch,50,2,2]
 
