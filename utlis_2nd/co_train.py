@@ -85,7 +85,6 @@ class train_init():
                                     "left_matrix":left_matrix,
                                     "pred_coeffs":pred_coeffs,
                                     "labels":label
-
                                 }
                     record_time = S_I_step % self.config["train_nomin"]
 
@@ -97,8 +96,6 @@ class train_init():
                                                 path=self.config["inference_net_writer"][save_analysis_path],
                                                 epoch_record=epoch_time)
 
-
-
                 # save for the data-visualization
                 mse_loss = self.criterion_inference(pred_data, real)
                 self.mse_loss_list.append(mse_loss)
@@ -106,11 +103,11 @@ class train_init():
 
                 #sparse -l1
                 l1_norm = self.S_I.layers["output"].weight.abs().sum()
-
-
                 self.fourier_loss_list.append(fouier_loss)
 
-                infer_loss = mse_loss + self.config["lamba_fourier"] * fouier_loss+self.config["lamba_lasso"]*l1_norm
+                infer_loss = mse_loss + \
+                             self.config["lamba_fourier"] * fouier_loss+\
+                             self.config["lamba_lasso"]*l1_norm
 
                 self.inference_loss_list.append(infer_loss)
                 # optimizer
@@ -173,7 +170,6 @@ class train_init():
                 real = batch_data[:, :, 7:9].to(device)
                 label = label
 
-
                 # return [batch,freq_index,2]
                 pred_freq = self.S_Omega(real)
 
@@ -223,11 +219,7 @@ class train_init():
         :return: value of eval dict
         '''
         eval_sinkhorn_loss = SamplesLoss("sinkhorn", p=2, blur=0.05)
-        analysis_name=0
-        if(name=="valid_process"):
-            analysis_name="valid_analysis_file"
-        elif(name=="test_process"):
-            analysis_name="test_analysis_file"
+
         S_I_eval_step = 0
 
         eval_freq_loss_list = []
@@ -253,9 +245,10 @@ class train_init():
             # g_omega_loss
             g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
             eval_freq_loss_list.append(g_omega_freq_loss)
-            # data_loss
-            data_loss = self.criterion_inference(pred_data, real)
-            eval_data_loss_list.append(data_loss)
+
+            # data_mse_loss
+            data_mse_loss = self.criterion_inference(pred_data, real)
+            eval_data_loss_list.append(data_mse_loss)
 
 
             # u_stat
@@ -278,19 +271,19 @@ class train_init():
         eval_mae=sum(eval_mae_list)/len(eval_mae_list)
 
         # save the eval result
-        self.S_I_Writer[name].add_scalars(name, { 'eval_freq_loss': eval_freq_loss,
-                                                   'eval_data_loss': eval_data_loss,
-                                                   'eval_u_stat_data': eval_u_stat_data,
+        self.S_I_Writer[name].add_scalars(name, {   'eval_freq_loss': eval_freq_loss,
+                                                    'eval_mse_loss': eval_data_loss,
+                                                    'eval_u_stat_data': eval_u_stat_data,
                                                     'eval_sinkhorn_data':eval_sinkhorn_data,
                                                     'eval_mae':eval_mae
                                                    }, eval_epoch)
 
         return_dict= {
-                                                    'eval_freq_loss': eval_freq_loss,
-                                                   'eval_data_loss': eval_data_loss,
-                                                   'eval_u_stat_data': eval_u_stat_data,
-                                                    'eval_sinkhorn_data':eval_sinkhorn_data,
-                                                    'eval_mae':eval_mae
+                                                    'eval_freq_loss': eval_freq_loss.cpu().detach().numpy(),
+                                                    'eval_mse_loss': eval_data_loss.cpu().detach().numpy(),
+                                                    'eval_u_stat_data': eval_u_stat_data.cpu().detach().numpy(),
+                                                    'eval_sinkhorn_data':eval_sinkhorn_data.cpu().detach().numpy(),
+                                                    'eval_mae':eval_mae.cpu().detach().numpy()
                                                    }
         return return_dict
 

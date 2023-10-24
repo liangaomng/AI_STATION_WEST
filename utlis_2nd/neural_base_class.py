@@ -315,10 +315,12 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  soft_arg_temp_info=[False,1.0],
                  gumble_info=[False,1.0],
                  dropout=0.1,
+                 residual_en=True
+
                  ):
 
         super(Omgea_MLPwith_residual_dict, self).__init__()
-
+        self.residual_en = residual_en
         if Combination_basis is None:
             self.basis_function = ["1","sin", "cos"]
         self.device_type=device_type
@@ -344,13 +346,13 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             #can upgrade
             self.register_parameter("softarg_temp",torch.nn.Parameter(torch.tensor(self.soft_temp_value)))
         else:
-            self.register_buffer("softarg_temp",torch.nn.Parameter(torch.tensor(self.soft_temp_value)))
+            self.register_buffer("softarg_temp",torch.tensor(self.soft_temp_value))
 
         if(self.gumble_en== True):
             #can upgrade
             self.register_parameter("gumble_temp",torch.nn.Parameter(torch.tensor(self.gumble_temp_value)))
         else:
-            self.register_buffer("gumble_temp",torch.nn.Parameter(torch.tensor(self.gumble_temp_value)))
+            self.register_buffer("gumble_temp",torch.tensor(self.gumble_temp_value))
 
 
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
@@ -360,7 +362,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         self.register_buffer('buffer_freq_index', torch.tensor(0))#[0,...,50]
         self.register_buffer('buffer_freq_numbers', torch.tensor(0))#0.02
         self.register_buffer('buffer_vari_number', torch.tensor(vari_number))
-
 
         # index of freq and numbers
         self.buffer_sample_length = torch.tensor(input_sample_lenth)
@@ -405,7 +406,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             self.output_act = RoundWithPrecisionSTE.apply()
         elif output_act == "distill_temp":
             self.output_act = TemperatureSoftmax(self.softarg_temp)
-
 
         prev_dim=hidden_dims[0]
 
@@ -673,17 +673,15 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             x = layer(x)
             x= self.dropout(x)
             x = act(x)
-            x += residual #resiual connection
-            residual = x
-        x=self.layers['hidden'][-1](x)
+            if self.residual_en:
+                x += residual #resiual connection
+                residual = x
         x = self.layers['output'](x)
-        #for varis softmax
+        #for vari softmax
         x=x.view(batch,-1,vari_number)
         # OMEGA is soft-to prob distribution [batch,51,vari_number]
         # inference is to get the coefficient by the prior knowledge
         x = self.output_act(x)
-
-
         return x
 
     def calculate_entropy(self,prob_distributions,dim_default=1):

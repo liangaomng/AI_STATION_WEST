@@ -186,6 +186,9 @@ def test_inference_model(co_train_actor):
                                                         eval_epoch=test_epoch,
                                                         name="test_process")
         #in the .csv
+        #>>need to be modified
+
+
         test_df=pd.DataFrame(test_dict,index=[0])
         test_df.to_csv(config["CSV"]+"/inference_final_result.csv",mode="a",header=True)
     return test_dict
@@ -257,9 +260,6 @@ def expr(expr_config,train_type="omega_net"):
                co_train_actor
 
     print("we have train and valid" )
-
-
-
 
 import pandas as pd
 def save_config(config):
