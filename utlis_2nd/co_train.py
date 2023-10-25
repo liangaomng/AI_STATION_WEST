@@ -42,7 +42,8 @@ class train_init():
     def train_inference_neural(self,
                                process_name="train_process",
                                device="cuda",
-                               save_2visualfig=True):
+                               save_2visualfig=True,
+                               sinkhorn_en=False):
         '''
         train the inference neural network
         return eval_value
@@ -145,7 +146,9 @@ class train_init():
                 }
                 torch.save(checkpoint, self.S_I_Writer["model_checkpoint_path"])
             with torch.no_grad():
-                eval_value=self.eval_inference_model(eval_data=self.valid_loader, eval_epoch=epoch,name="valid_process")
+                eval_value=self.eval_inference_model(eval_data=self.valid_loader,
+                                                     eval_epoch=epoch,
+                                                     name="valid_process")
         return eval_value
 
 
@@ -180,8 +183,6 @@ class train_init():
                 # g_omega_loss kl divergence
                 g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)
                 self.g_omega_freq_loss_list.append(g_omega_freq_loss)
-
-
 
                 # save for the data
                 # optimizer

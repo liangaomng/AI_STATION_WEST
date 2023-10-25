@@ -52,11 +52,12 @@ config = {
 
      #parameters
     "all_data_save_path": general_file_structure,
-    "lamba_ini": 1,
-    "lamba_grad": 1,
-    "lamba_gp": 1,
-    "lamba_fourier": 5,
-    "lamba_lasso":10,
+
+     #regulization parameters
+    "Sinhorn_loss_info":False,#[(sinkhorn_en)True,lambada_sinkhorn]
+    "Fourier_loss_info": False,#[(fouier_loss_en)_en,lambada_fourier]
+    "Lasso_loss_info":False,#[(lasso_loss_en),lambada_lasso]
+
     "prior_knowledge": {"basis_1": "x**0", "basis_2": "sin", "basis_3": "cos"},
     "S_I_lr": 1e-4,
     "S_Omega_lr": 1e-4,

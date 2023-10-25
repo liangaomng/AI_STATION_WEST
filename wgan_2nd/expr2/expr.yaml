@@ -15,4 +15,10 @@
   "Gumble_info":[False,0.4],
   "Sample_info":["Soft_argmax",1],#[none means all,prob_numbers]
 
+  "Sinhorn_loss_info":[True,2,0.5],#[EN,p,blur]
+  "Fourier_loss_info":[True,0.1],#[EN,lambad_value]
+  "Lasso_loss_info":[True,0.1],#[EN,lambad_value]
+
+
+
 }
