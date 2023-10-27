@@ -1,5 +1,4 @@
 import numpy as np
-
 import utlis_2nd.utlis_funcs as uf
 import torch
 import torch.optim as optim
@@ -8,7 +7,7 @@ import torch.nn as nn
 from geomloss import SamplesLoss
 
 class train_init():
-    def __init__(self,S_I,S_Omega,config,S_I_writer,S_Omega_writer):
+    def __init__(self,S_I,config,S_I_writer,S_Omega_writer):
 
 
         self.config=config
@@ -25,10 +24,11 @@ class train_init():
         # loss list
         self.g_omega_freq_loss_list = []
         self.inference_loss_list = []
-        self.ini_loss_list = []
-        self.grad_loss_list = []
         self.fourier_loss_list = []
         self.mse_loss_list = []
+        self.sink_loss_list = []
+        self.lasso_loss_list=[]
+
         #writer
         self.S_I_Writer=S_I_writer
         self.S_Omega_Writer=S_Omega_writer
@@ -36,19 +36,19 @@ class train_init():
         self.S_I_optimizer = optim.Adam(S_I.parameters(), lr=config["S_I_lr"])
         self.I_num_epoch = self.config["Inference_num_epoch"]
         self.Omega_num_epoch = self.config["Omega_num_epoch"]
-        self.freq_numbers = self.config["freq_numbers"]
-        self.lamba_fourier = self.config["lamba_fourier"]
 
     def train_inference_neural(self,
                                process_name="train_process",
                                device="cuda",
                                save_2visualfig=True,
-                               sinkhorn_en=False):
+                               sinkhorn_info=None):
         '''
         train the inference neural network
+                1.sinkhorn_info [EN,p,blur,lambada_value]
         return eval_value
         '''
         print("start train_inference")
+        print("sink_info",sinkhorn_info)
 
         S_I_step = 0
         save_analysis_path="train_analysis_file"
@@ -60,20 +60,14 @@ class train_init():
             for i, (batch_data, label) in enumerate(self.train_loader):
                 S_I_step += 1
                 # get the condition_data and data_t and dict_str_solu
-
                 # real_data
-                real = batch_data[:, :, 7:9].float().to(device)
-
-
+                real = batch_data[:, :, 7:9].to(device)
                 # compare the fourier domain's difference
                 real_freq_distrubtion  = self.S_I.return_fft_spectrum(real,need_norm=True)
-
                 # inference loss
                 pred_coeffs = self.S_I(real) #[batch,freq_index*2,2]
-
                 left_matrix,pred_data=self.S_I.return_pred_data(pred_coeffs,real_freq_distrubtion)
                 pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data,need_norm=True)
-
 
                 if(save_2visualfig==True):
 
@@ -102,13 +96,43 @@ class train_init():
                 self.mse_loss_list.append(mse_loss)
                 fouier_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
 
-                #sparse -l1
+                #sparse weight -l1
                 l1_norm = self.S_I.layers["output"].weight.abs().sum()
-                self.fourier_loss_list.append(fouier_loss)
+
+                # sinkhorn loss
+                if self.config["Sinkhorn_loss_info"][0]==True:
+
+                    p_value=self.config["Sinkhorn_loss_info"][1]
+                    blur_value=self.config["Sinkhorn_loss_info"][2]
+                    sinkhorn_loss = SamplesLoss(
+                                                    "sinkhorn",
+                                                     p=p_value,
+                                                     blur=blur_value)
+                    sink_loss = torch.mean(sinkhorn_loss(real, pred_data))
+                    sinkhorn_loss = self.config["Sinkhorn_loss_info"][3] * sink_loss
+                    self.sink_loss_list.append(sinkhorn_loss)
+                else:
+                    sinkhorn_loss=0
+                #weight lasso
+                if self.config["Lasso_loss_info"][0]==True:
+
+                    lasso_loss = self.config["Lasso_loss_info"][1]*l1_norm
+                    self.lasso_loss_list.append(lasso_loss)
+                else:
+                    lasso_loss = 0
+
+                if self.config["Fourier_loss_info"][0]==True:
+
+                    fourier_loss = self.config["Fourier_loss_info"][1]*fouier_loss
+                    self.fourier_loss_list.append(fouier_loss)
+
+                else:
+                    fourier_loss = 0
 
                 infer_loss = mse_loss + \
-                             self.config["lamba_fourier"] * fouier_loss+\
-                             self.config["lamba_lasso"]*l1_norm
+                             fourier_loss+ \
+                             lasso_loss+\
+                             sinkhorn_loss
 
                 self.inference_loss_list.append(infer_loss)
                 # optimizer
@@ -121,18 +145,21 @@ class train_init():
             final_time = time.time()
 
             epoch_inference_loss = sum(self.inference_loss_list) / len(self.inference_loss_list)
-            epoch_fourier_loss = sum(self.fourier_loss_list) / len(self.fourier_loss_list)
-            epoch_mse_loss = sum(self.mse_loss_list) / len(self.mse_loss_list)
+            epoch_fourier_loss = sum(self.fourier_loss_list) / len(self.fourier_loss_list) if len(self.sink_loss_list)!=0 else 0
+            epoch_mse_loss = sum(self.mse_loss_list) / len(self.mse_loss_list) if len(self.sink_loss_list)!=0 else 0
+            epoch_sink_loss=sum(self.sink_loss_list)/len(self.sink_loss_list) if len(self.sink_loss_list)!=0 else 0
             self.S_I_Writer[process_name].add_scalars(process_name,
                                                         {
                                                         "inference_loss": epoch_inference_loss,
                                                         "fourier_loss": epoch_fourier_loss,
+                                                        "sink_loss":epoch_sink_loss,
                                                         "mse_loss": epoch_mse_loss}, epoch)
 
 
             self.inference_loss_list = []
             self.fourier_loss_list = []
-
+            self.mse_loss_list=[]
+            self.sink_loss_list=[]
 
             print(f"loss{epoch_inference_loss.item()}" + f"_epoch{epoch}" + "epoch_time" + \
                   f"{final_time - start_time}", flush=True)
@@ -152,6 +179,83 @@ class train_init():
         return eval_value
 
 
+    def eval_inference_model(self, eval_data,eval_epoch,name="valid_process"):
+        '''
+
+        :return: value of eval dict
+        '''
+        eval_sinkhorn_loss = SamplesLoss("sinkhorn")
+
+        S_I_eval_step = 0
+
+        eval_freq_loss_list = []
+        eval_data_loss_list = []
+        eval_u_stat_data_list = []
+        eval_sinkhorn_data_list = []
+        eval_mae_list=[]
+        for i, (batch_data, label) in enumerate(eval_data):
+            S_I_eval_step += 1
+            # get the condition_data and data_t and dict_str_solu
+            # real_data
+            real = batch_data[:, :, 7:9].double()
+
+            # compare the fourier domain's difference
+            real_freq_distrubtion = self.S_I.return_fft_spectrum(real, need_norm=True)
+
+            # inference loss
+            pred_coeffs = self.S_I(real)  # [batch,freq_index*2,2]
+            left_matrix,pred_data = self.S_I.return_pred_data(pred_coeffs, real_freq_distrubtion)
+
+            pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data, need_norm=True)
+
+            # fourier_loss
+            g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
+            eval_freq_loss_list.append(g_omega_freq_loss)
+
+            # data_mse_loss
+            data_mse_loss = self.criterion_inference(pred_data, real)
+            eval_data_loss_list.append(data_mse_loss)
+
+
+            # u_stat
+            u_stat_data = uf.theil_u_statistic(pred_data, real)
+            eval_u_stat_data_list.append(u_stat_data)
+
+            # [batch]-numbers sinkhorn distance
+            data_sinkhorn=torch.mean(eval_sinkhorn_loss(real,pred_data.double()))
+            eval_sinkhorn_data_list.append(data_sinkhorn)
+
+
+            #eval_sinkhorn_data_list.append(data_sinkhorn)
+            #eval mae data
+            eval_mae_list.append(nn.L1Loss()(pred_data,real))
+
+
+
+
+        eval_freq_loss = sum(eval_freq_loss_list) / len(eval_freq_loss_list)
+        eval_data_loss = sum(eval_data_loss_list) / len(eval_data_loss_list)
+
+        eval_u_stat_data = sum(eval_u_stat_data_list) / len(eval_u_stat_data_list)
+        eval_sinkhorn_data=sum(eval_sinkhorn_data_list)/len(eval_sinkhorn_data_list)
+        eval_mae=sum(eval_mae_list)/len(eval_mae_list)
+
+        # save the eval result
+        self.S_I_Writer[name].add_scalars(name, {   'eval_freq_loss': eval_freq_loss,
+                                                    'eval_mse_loss': eval_data_loss,
+                                                    'eval_u_stat_data': eval_u_stat_data,
+                                                    'eval_sinkhorn_data':eval_sinkhorn_data,
+                                                    'eval_mae':eval_mae
+                                                   }, eval_epoch)
+
+        return_dict= {
+                                                    'eval_freq_loss': eval_freq_loss.cpu().detach().numpy(),
+                                                    'eval_mse_loss': eval_data_loss.cpu().detach().numpy(),
+                                                    'eval_u_stat_data': eval_u_stat_data.cpu().detach().numpy(),
+                                                    'eval_sinkhorn_data':eval_sinkhorn_data.cpu().detach().numpy(),
+                                                    'eval_mae':eval_mae.cpu().detach().numpy()
+                                                   }
+        return return_dict
     def train_omega_neural(self,
                            process_name="train_process",
                            device="cuda"):
@@ -164,6 +268,7 @@ class train_init():
         for epoch in range(self.Omega_num_epoch):
 
             start_time = time.time()
+
             for i, (batch_data, label) in enumerate(self.train_loader):
                 S_Omega_step += 1
 
@@ -177,8 +282,10 @@ class train_init():
                 pred_freq = self.S_Omega(real)
 
                 # compare the real fourier domain's difference
-                #*** problem  if datapara :self.S_Omega.module.return_fft_spectrum(
-                real_freq= self.S_Omega.return_fft_spectrum(real,need_norm=True)
+                #*** problem  if datapara :self.S_Omega.module.return_fft_spectrum
+                real_freq= self.S_Omega.return_fft_spectrum(
+                                                            real,
+                                                            need_norm=True)
 
                 # g_omega_loss kl divergence
                 g_omega_freq_loss = self.criterion_fourier(pred_freq.log(), real_freq)
@@ -211,83 +318,6 @@ class train_init():
                 eval_mse_value,u_stat,eval_mae=self.eval_omega_model(eval_data=self.valid_loader,
                                  eval_epoch=epoch,name="valid_process")
         return eval_mse_value,u_stat,eval_mae
-
-
-
-    def eval_inference_model(self, eval_data,eval_epoch,name="valid_process"):
-        '''
-
-        :return: value of eval dict
-        '''
-        eval_sinkhorn_loss = SamplesLoss("sinkhorn", p=2, blur=0.05)
-
-        S_I_eval_step = 0
-
-        eval_freq_loss_list = []
-        eval_data_loss_list = []
-        eval_u_stat_data_list = []
-        eval_sinkhorn_data_list = []
-        eval_mae_list=[]
-        for i, (batch_data, label) in enumerate(eval_data):
-            S_I_eval_step += 1
-            # get the condition_data and data_t and dict_str_solu
-            # real_data
-            real = batch_data[:, :, 7:9]
-
-            # compare the fourier domain's difference
-            real_freq_distrubtion = self.S_I.return_fft_spectrum(real, need_norm=True)
-
-            # inference loss
-            pred_coeffs = self.S_I(real)  # [batch,freq_index*2,2]
-            left_matrix,pred_data = self.S_I.return_pred_data(pred_coeffs, real_freq_distrubtion)
-
-            pred_freq_distrubtion = self.S_I.return_fft_spectrum(pred_data, need_norm=True)
-
-            # g_omega_loss
-            g_omega_freq_loss = self.criterion_fourier(pred_freq_distrubtion.log(), real_freq_distrubtion)
-            eval_freq_loss_list.append(g_omega_freq_loss)
-
-            # data_mse_loss
-            data_mse_loss = self.criterion_inference(pred_data, real)
-            eval_data_loss_list.append(data_mse_loss)
-
-
-            # u_stat
-            u_stat_data = uf.theil_u_statistic(pred_data, real)
-            eval_u_stat_data_list.append(u_stat_data)
-            # [batch]-numbers sinkhorn distance
-            data_sinkhorn=torch.mean(eval_sinkhorn_loss(real,pred_data))
-            eval_sinkhorn_data_list.append(data_sinkhorn)
-            #eval mae data
-            eval_mae_list.append(nn.L1Loss()(pred_data,real))
-
-
-
-
-        eval_freq_loss = sum(eval_freq_loss_list) / len(eval_freq_loss_list)
-        eval_data_loss = sum(eval_data_loss_list) / len(eval_data_loss_list)
-
-        eval_u_stat_data = sum(eval_u_stat_data_list) / len(eval_u_stat_data_list)
-        eval_sinkhorn_data=sum(eval_sinkhorn_data_list)/len(eval_sinkhorn_data_list)
-        eval_mae=sum(eval_mae_list)/len(eval_mae_list)
-
-        # save the eval result
-        self.S_I_Writer[name].add_scalars(name, {   'eval_freq_loss': eval_freq_loss,
-                                                    'eval_mse_loss': eval_data_loss,
-                                                    'eval_u_stat_data': eval_u_stat_data,
-                                                    'eval_sinkhorn_data':eval_sinkhorn_data,
-                                                    'eval_mae':eval_mae
-                                                   }, eval_epoch)
-
-        return_dict= {
-                                                    'eval_freq_loss': eval_freq_loss.cpu().detach().numpy(),
-                                                    'eval_mse_loss': eval_data_loss.cpu().detach().numpy(),
-                                                    'eval_u_stat_data': eval_u_stat_data.cpu().detach().numpy(),
-                                                    'eval_sinkhorn_data':eval_sinkhorn_data.cpu().detach().numpy(),
-                                                    'eval_mae':eval_mae.cpu().detach().numpy()
-                                                   }
-        return return_dict
-
     def eval_omega_model(self,eval_data,eval_epoch,name="valid_process"):
         '''
          :param eval_data: eval data

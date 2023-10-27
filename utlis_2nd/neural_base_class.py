@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 import utlis_2nd.utlis_funcs as uf
+import numpy as np
 
-import sympy as sp
 '''
 base class for neural_network
 '''
@@ -199,7 +199,7 @@ class Rational(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         self.coeffs.data[0,1].zero_()
-        exp = torch.tensor([3., 2., 1., 0.], device=input.device, dtype=input.dtype)
+        exp = torch.tensor([3., 2., 1., 0.], device=input.device)
         X = torch.pow(input.unsqueeze(-1), exp)
         PQ = X @ self.coeffs
         output = torch.div(PQ[..., 0], PQ[..., 1])
@@ -292,9 +292,6 @@ class gumble_softmax(nn.Module):
         y_hard = (y_hard - y).detach() + y
         return y_hard.view(-1, self.latent_dim * self.categorical_dim)
 
-
-
-
 # Transition = namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
 # # 创建一个 Transition 对象
 # trans = Transition(state=1, action=2, reward=3, next_state=4, done=False)
@@ -316,7 +313,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
                  gumble_info=[False,1.0],
                  dropout=0.1,
                  residual_en=True
-
                  ):
 
         super(Omgea_MLPwith_residual_dict, self).__init__()
@@ -354,7 +350,6 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         else:
             self.register_buffer("gumble_temp",torch.tensor(self.gumble_temp_value))
 
-
         self.register_buffer('buffer_sample_time', torch.tensor(sample_vesting))
         self.register_buffer('buffer_sample_length', torch.tensor(0)) #100
         self.register_buffer('buffer_sample_rate', torch.tensor(0))#2s
@@ -375,17 +370,19 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         elif grad_order==0:
             input_dim = self.buffer_sample_length*vari_number
 
-        output_dim = self.buffer_freq_numbers*vari_number
+        output_dim = int(self.buffer_freq_numbers*vari_number)
 
         if output_coeff== True: #4inference net
 
             self.non_zero_freq_num=self.buffer_freq_index[1:].numel()
 
-            output_dim = vari_number* (2*self.non_zero_freq_num+1) #2 means that sin and cos family
+            output_dim = int(vari_number* (2*self.non_zero_freq_num+1)) #2 means that sin and cos family
             print("output_dim",output_dim)
 
+
         self.layers = nn.ModuleDict({
-            "layer_norm": nn.LayerNorm([self.buffer_sample_length*vari_number]),# feature=[100*3]
+
+            "layer_norm": nn.LayerNorm([200]),#input_dim
             'input': nn.Linear(input_dim, hidden_dims[0]),
             'hidden': nn.ModuleList(),
             'output': nn.Linear(hidden_dims[-1],output_dim),
@@ -665,6 +662,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         x=x.reshape(batch,-1) #[batch,100*2*3]
 
         x=self.layers["layer_norm"](x)
+
         x = self.layers['input'](x)
         x = self.layers['hidden_act'][0](x)
         residual = x
@@ -682,6 +680,7 @@ class Omgea_MLPwith_residual_dict(nn.Module):
         # OMEGA is soft-to prob distribution [batch,51,vari_number]
         # inference is to get the coefficient by the prior knowledge
         x = self.output_act(x)
+
         return x
 
     def calculate_entropy(self,prob_distributions,dim_default=1):
@@ -689,11 +688,10 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             input:prob_distributions:[batch,51,vari_number]
             return [batch,scalar]
         '''
-        print("input",prob_distributions.shape)
+
         # ensure the sum of prob is 1
         prob_distributions = F.normalize(prob_distributions, p=1.0, dim=1)
-        plt.plot(prob_distributions.squeeze(0).detach().numpy())
-        plt.show()
+
 
         # cal entropy scalar
         # 1e-10 to prevent log(0)
@@ -801,71 +799,6 @@ def compute_w_div(real_samples, real_out, fake_samples, fake_out):
     div_gp = torch.mean(real_grad_norm ** (p / 2) + fake_grad_norm ** (p / 2)) * k / 2
     return div_gp
 
-def to_symbol(dict):
-    '''
-    :param dict:
-    :return: [], conclude the symbol
-    '''
-    symbols = []
-    x = sp.symbols('x')
-    psi=sp.symbols('psi')
-    for key, value in dict.items():
-        if isinstance(value, str):
-            if value == 'sin':
-                symbols.append(sp.sin(x+psi))
-            elif value == 'cos':
-                symbols.append(sp.cos(x+psi))
-            elif value =='x**0':
-                symbols.append(x**0)
-        else:
-            symbols.append(value)
-    return symbols
-
-#func:pick_basis_function
-#input:dict
-#output:basis_function
-def pick_basis_function(basis_dict:dict,basis_num=3):
-    '''
-    :param 1. basis_dict:is a dict like  {'basis_1': 0, 'basis_2': 'sin', 'basis_3': 'cos'}
-           2. numbers=3 means that we pick the 3 basis functions
-    :return: #Matrix([[0], [sin(x+psi)], [cos(x+psi)]])
-    '''
-    # create func matrix -prior
-    symbols=to_symbol(basis_dict)#[0, sin(x), cos(x)]
-    #covert to the func_matrix
-    func_matrix = sp.Matrix([symbols[i] for i in range(basis_num)])
-    return func_matrix
-
-def Get_basis_function_info(dict,numbers=3):
-    '''
-    :param:     1.dict{'basis_1': 0, 'basis_2': 'sin omega*x', 'basis_3': 'cos omega*x'}
-                2.numbers=3
-    :return:    left_matirx:100*numbers
-                symbol_matrix:numbers*1
-                #note sympy is according to the rad
-                #1rad=180/pi
-    '''
-    x = sp.symbols('x')
-    psi = sp.symbols('psi')
-    symbol_matrix = pick_basis_function(dict,basis_num=numbers)
-
-    funcs = [sp.lambdify((x,psi), symbol_matrix[i]) for i in range(numbers)]
-
-    left_matirx= torch.zeros(100,numbers,
-                             dtype=torch.float64,
-                             device='cuda')
-    #generate the 100*numbers
-    t = np.linspace(0,2,100)
-    psi=0
-
-    for i, func in enumerate(funcs):
-
-        value = func(t,psi)
-        value = torch.tensor(value, dtype=torch.float64)
-        left_matirx[:, i] = value
-
-
-    return left_matirx,symbol_matrix
 
 
 def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,eval=False):
@@ -898,137 +831,5 @@ def convert_data(real_data:torch.tensor,data_t,label:torch.tensor,eval=False):
     trans_condition = torch.cat((real_data, real_grads), dim=1)
 
     return trans_condition,dict_str_solu
-
-from concurrent.futures import ProcessPoolExecutor
-
-
-import torch.nn.functional as F
-def soft_argmax(x, beta=1.0):
-    """
-        param:  1.x is freq_index [batch,51,1]
-                2.beta is a temperature BETA IS LARGER ,THE MORE APPROCH
-    """
-    x = x * beta
-    softmax = F.softmax(x, dim=-1)
-    indices = torch.arange(start=0, end=x.size()[-1], dtype=torch.float32).to(x.device)
-    return torch.sum(softmax * indices, dim=-1)
-import matplotlib.pyplot as plt
-import numpy as np
-def compute_spectrum(data_tensor,sampling_rate=49.5,
-                     num_samples=100, device="cuda",
-                     beta=1,
-                     freq_number=1,domin_number=32,
-                     train_step=0,filepath=0,name="",label_save=0):
-
-    '''
-    Input:
-            :param tensor: [batch,100,2]
-            :pred_freq_tensor: [batch,freq_number,2]
-            :param sampling_rate: 49.5 hz
-            :param freq_number: 1
-            :note =omega/2*pi
-
-            :train_step
-            :every epoch save the spectrum
-
-    return: omega= resolution * freq_index*2pi:soft_argmax [batch,2]
-    '''
-
-    batch,_,vari_dimension = data_tensor.size()
-    resolution=sampling_rate/num_samples
-    soft_freq_index = torch.zeros((batch,freq_number,vari_dimension), requires_grad=True).to(device)
-
-    # note： the P_freqs has 0 hz，and resolution=2/99=49.5hz
-    P_freqs = torch.fft.rfftfreq(num_samples, d=1 / sampling_rate)[:].to(device)  # [batch，51]
-
-
-    for i in range(vari_dimension):
-
-        #fft & P_freqs(positive freqs)
-        spectrum = torch.fft.rfft(data_tensor[:,:,i]) #return [batch，51，2]
-
-        #magnitude abs
-        magnitude = torch.abs(spectrum)  #[batch,51]
-
-        #soft_argmax
-        # soft_argmax_freq_index = soft_argmax(magnitude,beta)#[batch,1]
-        # soft_freq_index[:,i] = soft_argmax_freq_index
-        for j in range(freq_number):
-            soft_idx = soft_argmax(magnitude, beta)  # [batch]
-            soft_idx = soft_idx.reshape(batch,1)
-            soft_freq_index[:, j:j+1, i] = soft_idx
-            # Mask the magnitude by setting the maximum value to a very small value--0
-            top_val, top_idx = torch.max(magnitude, dim=1, keepdim=True)
-            magnitude.scatter_(1, top_idx,0)
-
-        soft_omega = soft_freq_index * resolution * 2 * torch.pi
-
-    #save for plot
-    if train_step % domin_number ==0:
-
-        epoch_omega=train_step/domin_number
-        info={
-                "raw_data":data_tensor,
-                    "P_freqs":P_freqs,
-                    "soft_freq_index":soft_freq_index,
-                    "soft_omega":soft_omega,
-                    "epoch":epoch_omega,
-                    "label_save":label_save
-                 }
-
-        torch.save(info, filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
-
-    soft_omega=soft_freq_index*resolution*2*torch.pi
-    return soft_omega
-def compute_spectrum_normlized(
-                     data_tensor,
-                     sampling_rate=49.5,
-                     domin_number=32,
-                     train_step=0,filepath=0,name="",
-                     label_save=0):
-
-
-    """
-    Perform FFT and return normalized frequency and magnitude.
-
-    Parameters:
-    - input_tensor: PyTorch tensor of shape [batch_size, time_steps, num_variables]
-
-    Returns:
-    - normalized_magnitude: Normalized magnitude for each frequency, shape [batch_size, num_frequencies, num_variables]
-    - freqs: Frequencies corresponding to each FFT output, shape [num_frequencies]
-    """
-    batch_size, time_steps, num_variables = data_tensor.shape
-
-    # Perform FFT
-    spectrum = torch.fft.rfft(data_tensor, dim=1)  # Shape: [batch_size, num_frequencies, num_variables, 2]
-
-    # Compute magnitude
-    magnitude = torch.abs(spectrum)  # Shape: [batch_size, num_frequencies, num_variables]
-
-    # Normalize
-    max_magnitude = torch.max(magnitude, dim=1, keepdim=True)[0]  # Shape: [batch_size, 1, num_variables]
-
-    normalized_magnitude = magnitude / max_magnitude  # Shape: [batch_size, num_frequencies, num_variables]
-
-    # Compute frequencies
-    freqs = torch.fft.rfftfreq(time_steps,d=1/sampling_rate)  # Shape: [num_frequencies]
-
-    #save for plot
-    if train_step % domin_number ==0:
-
-        epoch_omega=train_step/domin_number
-        info={
-                    "raw_data":data_tensor,
-                    "P_freqs":freqs,
-                    "epoch":epoch_omega,
-                    "label_save":label_save
-                 }
-
-        torch.save(info, filepath+"/"+name+"_"+f"{int(epoch_omega)}.pth")
-
-    return normalized_magnitude, freqs
-
-
 
 
