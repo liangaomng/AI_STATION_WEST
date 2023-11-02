@@ -4,7 +4,7 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 from PIL import Image
-import cv2
+
 import os
 from natsort import natsorted
 import argparse
@@ -292,34 +292,34 @@ def plot_conditions_4_real_fake(plot_path,real_condition,fake_condition):
 '''
 func:images_to_video()
 meaning:search and save .mp4
-'''
-def images_to_video(search_path:str, search_name:str,
-                    output_filename:str,
-                    fps=1000):
-    '''
-    :param search_path:     a file which contains the png
-    :param search_name:     like "generator" and "critic"
-    :param output_filename:  output name
-    :param fps: 1s
-    '''
-
-    image_folder = search_path
-    video_path = search_path+"/"+output_filename
-
-    images = [img for img in os.listdir(image_folder) \
-
-    if img.endswith(".png") and img.startswith(search_name)]
-    images = natsorted(images)
-    #把images里面的图片变成视频
-    frame = cv2.imread(os.path.join(image_folder, images[0]))
-    height, width, layers = frame.shape
-    #fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Be sure to use lower case
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-
-    for image in images:
-        video.write(cv2.imread(os.path.join(image_folder, image)))
-    print("mp4 save")
+# '''
+# def images_to_video(search_path:str, search_name:str,
+#                     output_filename:str,
+#                     fps=1000):
+#     '''
+#     :param search_path:     a file which contains the png
+#     :param search_name:     like "generator" and "critic"
+#     :param output_filename:  output name
+#     :param fps: 1s
+#     '''
+#
+#     image_folder = search_path
+#     video_path = search_path+"/"+output_filename
+#
+#     images = [img for img in os.listdir(image_folder) \
+#
+#     if img.endswith(".png") and img.startswith(search_name)]
+#     images = natsorted(images)
+#     #把images里面的图片变成视频
+#     frame = cv2.imread(os.path.join(image_folder, images[0]))
+#     height, width, layers = frame.shape
+#     #fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Be sure to use lower case
+#     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#     video = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+#
+#     for image in images:
+#         video.write(cv2.imread(os.path.join(image_folder, image)))
+#     print("mp4 save")
 '''
 func:Get_test_args
 meaning:get argus for the tese

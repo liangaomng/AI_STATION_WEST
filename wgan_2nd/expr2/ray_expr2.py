@@ -10,7 +10,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 只显示ERROR日志
 
 def copy_folder(src_folder,dest_folder):
     '''
-
     :param src_folder:  son’ flies
     :param dest_folder: father
     :return:
@@ -84,9 +83,11 @@ if __name__ == "__main__":
 
     #space
     config_space = {
-        "S_Omega_lr": task_expr1.config["S_Omega_lr"],#constant
-        "seed": tune.grid_search([1,42,100]),#grid search
-        "Inference_num_epoch": tune.grid_search([5000]),#grid search
+        "S_Omega_lr":[1e-3,1e-4,1e-5],#constant
+        "seed": tune.grid_search([i for i in range(100)]),#grid search
+        "sample_method":[None,["Topk",10],["Soft_argmax",1]],#grid search
+        "hidden_act":["rational"],
+        "Inference_num_epoch": tune.grid_search([50000]),#grid search
         "src_copy_path":"/liangaoming/conda_lam/expriments/paper1/expr_1",
 
     }

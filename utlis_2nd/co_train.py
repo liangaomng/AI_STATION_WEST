@@ -197,7 +197,7 @@ class train_init():
             S_I_eval_step += 1
             # get the condition_data and data_t and dict_str_solu
             # real_data
-            real = batch_data[:, :, 7:9].double()
+            real = batch_data[:, :, 7:9]
 
             # compare the fourier domain's difference
             real_freq_distrubtion = self.S_I.return_fft_spectrum(real, need_norm=True)
@@ -222,7 +222,7 @@ class train_init():
             eval_u_stat_data_list.append(u_stat_data)
 
             # [batch]-numbers sinkhorn distance
-            data_sinkhorn=torch.mean(eval_sinkhorn_loss(real,pred_data.double()))
+            data_sinkhorn=torch.mean(eval_sinkhorn_loss(real,pred_data))
             eval_sinkhorn_data_list.append(data_sinkhorn)
 
 

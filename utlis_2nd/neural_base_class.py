@@ -84,20 +84,28 @@ class SineLayer(nn.Module):
                 self.linear.weight.uniform_(-1 / self.in_features,
                                             1 / self.in_features)
             else:
-                self.linear.weight.uniform_(-np.sqrt(6 / self.in_features) / self.omega_0,
-                                            np.sqrt(6 / self.in_features) / self.omega_0)
+                self.linear.weight.uniform_(-np.sqrt(6 / self.in_features)
+                                            / self.omega_0,
+                                            np.sqrt(6 / self.in_features)
+                                            / self.omega_0)
 
     def forward(self, input):
         return torch.sin(self.omega_0 * self.linear(input))
 
     def forward_with_intermediate(self, input):
-        # For visualization of activation distributions
+        # For visualization of activation distri*
+        # butions
         intermediate = self.omega_0 * self.linear(input)
         return torch.sin(intermediate), intermediate
 
 class Siren(nn.Module):
-    def __init__(self, in_features, hidden_features, hidden_layers, out_features, outermost_linear=False,
-                 first_omega_0=30, hidden_omega_0=30):
+    def __init__(self, in_features,
+                 hidden_features,
+                 hidden_layers,
+                 out_features,
+                 outermost_linear=False,
+                 first_omega_0=30,
+                 hidden_omega_0=30):
         super().__init__()
 
         self.net = []
@@ -125,7 +133,7 @@ class Siren(nn.Module):
     def forward(self, coords):
         coords = coords.clone().detach().requires_grad_(True)  # allows to take derivative w.r.t. input
         output = self.net(coords)
-        return output
+        return output, coords
 
 class omega_generator(nn.Module):
     def __init__(self,input_dim=400,output_dim=2,act='rational'):
@@ -420,6 +428,8 @@ class Omgea_MLPwith_residual_dict(nn.Module):
             elif hidden_act=='phi_b_line':
 
                 self.layers['hidden_act'].append(phi_b_line())
+            elif hidden_act=='siren':
+                self.layers['hidden_act'].append(iren())
 
             prev_dim = dim
 
@@ -724,10 +734,12 @@ class Discriminator(nn.Module):
     def __init__(self,input_dim=2*100+101*2,output=1):
         super(Discriminator, self).__init__()
 
-        self.siren2=Siren(in_features=input_dim, hidden_features=512, hidden_layers=3,
+        self.siren2=Siren(in_features=input_dim,
+                          hidden_features=512,
+                          hidden_layers=3,
                           out_features=1,
                           outermost_linear=True,
-                         first_omega_0=30, hidden_omega_0=30)
+                          first_omega_0=30, hidden_omega_0=30)
 
         # flatten
         self.flatten = nn.Flatten()

@@ -12,8 +12,8 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         # get data&label
         # label is a string of csv number
-        data = self.data[index].to(dtype=torch.float64)
-        label = self.label[index].to(dtype=torch.float64)
+        data = self.data[index].to(dtype=torch.float32)
+        label = self.label[index].to(dtype=torch.float32)
         # pre-processing
         return data, label
 
