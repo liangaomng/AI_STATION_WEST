@@ -1,0 +1,25 @@
+#this is yaml file for expr1
+# expr1.yaml
+{
+  'expr_name': 'expr2',
+  'type': "supervised_learning",
+  'train_size_percent': 0.8,
+  'valid_size_percent': 0.1,
+  'test_size_percent': 0.1,
+  'batch_size': 256,
+  'seed':56,
+  'all_solus_numbers':None,
+   #temp info
+  "Soft_argmax_info":[False,1], #[learnable,value]
+  "Gumble_info":None,
+  "Sample_info":["All",10],#[none means all,prob_numbers] "all" or"Topk"
+   #vari_number
+  "vari_number":2,
+   #data_state
+  "data_description":None, #[100,2,2,49.5,51] means that 100 data_length(t_steps), 2s, 2 vari, 49.5 sample rate,51 freq(includ dc)
+  #loss info
+  "Sinkhorn_loss_info":[False,2,0.05,1],#[EN,p,blur,lambada_value]
+  "Fourier_loss_info":[False,0.1],#[EN,lambad_value]
+  "Lasso_loss_info":[True,1],#[EN,lambad_value]
+   "gpt":None
+}

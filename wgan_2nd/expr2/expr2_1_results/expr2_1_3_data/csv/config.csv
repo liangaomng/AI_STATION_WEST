@@ -1,0 +1,40 @@
+,0
+batch_size,256
+hidden_nueral_dims,"[512, 512, 512]"
+data_description,"[100, 2.0, 2, 49.5, 51]"
+hidden_act,rational
+omega_output_act,
+inference_output_act,Identity
+optimizer,
+vari_number,2
+all_data_save_path,"{'train_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/train_process', 'valid_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/valid_process', 'test_process': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/test_process', 'model_checkpoint_path': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/model_check_point', 'CSV': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/csv', 'tb_event': '/tb_event', 'train_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/train_process', 'valid_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/valid_process', 'test_analysis_file': '/liangaoming/conda_lam/expriments/paper1/expr1/expr1_/test_process'}"
+Sinkhorn_loss_info,"[False, 2, 0.05, 1]"
+Fourier_loss_info,"[False, 0.1]"
+Lasso_loss_info,"[True, 1]"
+prior_knowledge,"{'basis_1': 'x**0', 'basis_2': 'sin', 'basis_3': 'cos'}"
+S_I_lr,0.0001
+grads_types,"{'boundary': 3, 'inner': 5}"
+expr_data_path,E:\expr\AI_STATION_WEST-master\wgan_2nd\expr2\expr2_1_results\expr2_1_3_data
+CSV,E:\expr\AI_STATION_WEST-master\wgan_2nd\expr2\expr2_1_results\expr2_1_3_data/csv
+tb_event,/tb_event
+omega_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE7FAC1310>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE61FE8610>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE61FEA700>, 'model_checkpoint_path': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/model_check_point/omega_net/omega_net_model.pth', 'train_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/train_process/omega_net/analysis_files', 'valid_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/valid_process/omega_net/analysis_files', 'test_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/test_process/omega_net/analysis_files'}"
+inference_net_writer,"{'train_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE00561B20>, 'valid_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE61FCE700>, 'test_process': <torch.utils.tensorboard.writer.SummaryWriter object at 0x000001AE179C41F0>, 'model_checkpoint_path': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/model_check_point/inference_net/inference_net_model.pth', 'train_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/train_process/inference_net/analysis_files', 'valid_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/valid_process/inference_net/analysis_files', 'test_analysis_file': 'E:\\expr\\AI_STATION_WEST-master\\wgan_2nd\\expr2\\expr2_1_results\\expr2_1_3_data/test_process/omega_net/analysis_files'}"
+train_nomin,32
+valid_nomin,4
+test_nomin,4
+seed,42
+Omega_num_epoch,6
+Inference_num_epoch,4
+infer_minimum,0.1
+soft_arg_info,"Soft_arg_temp(learnable=False, value=1)"
+gumble_info,
+sample_choice,
+train_loader,<torch.utils.data.dataloader.DataLoader object at 0x000001AE7FAC1C10>
+valid_loader,<torch.utils.data.dataloader.DataLoader object at 0x000001AE7FAC18B0>
+test_loader,<torch.utils.data.dataloader.DataLoader object at 0x000001AE7FAC1580>
+current_expr_start_time,2023-11-22 16:26:27
+data_length,
+device,cuda
+SI_lr,1e-05
+sample_vesting,2
+sample_info,"Sample_info(type='All', sample_numb=10)"
